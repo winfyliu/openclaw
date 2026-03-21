@@ -18,6 +18,7 @@ import {
 } from "../routing/session-key.js";
 import { emitSessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
+import { registerSpawnedSubagentTask } from "./task-orchestrator.js";
 import { resolveAgentConfig } from "./agent-scope.js";
 import { AGENT_LANE_SUBAGENT } from "./lanes.js";
 import { resolveSubagentSpawnModelSelection } from "./model-selection.js";
@@ -564,7 +565,6 @@ export async function spawnSubagentDirect(
     childDepth,
     maxSpawnDepth,
   });
-
   let retainOnSessionKeep = false;
   let attachmentsReceipt:
     | {
@@ -738,6 +738,7 @@ export async function spawnSubagentDirect(
   }
 
   try {
+    let trackedTaskId: string | undefined;
     registerSubagentRun({
       runId: childRunId,
       childSessionKey,
@@ -757,6 +758,46 @@ export async function spawnSubagentDirect(
       attachmentsRootDir: attachmentRootDir,
       retainAttachmentsOnKeep: retainOnSessionKeep,
     });
+    try {
+      const trackedTask = registerSpawnedSubagentTask({
+        requesterSessionKey: requesterInternalKey,
+        childSessionKey,
+        runId: childRunId,
+        task,
+        label: label || undefined,
+      });
+      trackedTaskId = trackedTask.taskId;
+    } catch {
+      // Task-progress tracking is best-effort and must not fail spawns.
+    }
+    if (hookRunner?.hasHooks("subagent_spawned")) {
+      try {
+        await hookRunner.runSubagentSpawned(
+          {
+            runId: childRunId,
+            childSessionKey,
+            agentId: targetAgentId,
+            label: label || undefined,
+            requester: {
+              channel: requesterOrigin?.channel,
+              accountId: requesterOrigin?.accountId,
+              to: requesterOrigin?.to,
+              threadId: requesterOrigin?.threadId,
+            },
+            threadRequested: requestThreadBinding,
+            mode: spawnMode,
+            taskId: trackedTaskId,
+          },
+          {
+            runId: childRunId,
+            childSessionKey,
+            requesterSessionKey: requesterInternalKey,
+          },
+        );
+      } catch {
+        // Spawn should still return accepted if spawn lifecycle hooks fail.
+      }
+    }
   } catch (err) {
     if (attachmentAbsDir) {
       try {
@@ -780,34 +821,6 @@ export async function spawnSubagentDirect(
       childSessionKey,
       runId: childRunId,
     };
-  }
-
-  if (hookRunner?.hasHooks("subagent_spawned")) {
-    try {
-      await hookRunner.runSubagentSpawned(
-        {
-          runId: childRunId,
-          childSessionKey,
-          agentId: targetAgentId,
-          label: label || undefined,
-          requester: {
-            channel: requesterOrigin?.channel,
-            accountId: requesterOrigin?.accountId,
-            to: requesterOrigin?.to,
-            threadId: requesterOrigin?.threadId,
-          },
-          threadRequested: requestThreadBinding,
-          mode: spawnMode,
-        },
-        {
-          runId: childRunId,
-          childSessionKey,
-          requesterSessionKey: requesterInternalKey,
-        },
-      );
-    } catch {
-      // Spawn should still return accepted if spawn lifecycle hooks fail.
-    }
   }
 
   // Emit lifecycle event so the gateway can broadcast sessions.changed to SSE subscribers.

@@ -25,6 +25,7 @@ import {
   runSubagentAnnounceFlow,
   type SubagentRunOutcome,
 } from "./subagent-announce.js";
+import { markSubagentTaskOutcome } from "./task-orchestrator.js";
 import {
   SUBAGENT_ENDED_OUTCOME_KILLED,
   SUBAGENT_ENDED_REASON_COMPLETE,
@@ -1448,6 +1449,11 @@ async function waitForSubagentCompletion(runId: string, waitTimeoutMs: number) {
         : wait.status === "timeout"
           ? { status: "timeout" }
           : { status: "ok" };
+    markSubagentTaskOutcome({
+      runId,
+      status: outcome.status,
+      error: outcome.status === "error" ? outcome.error : undefined,
+    });
     if (!runOutcomesEqual(entry.outcome, outcome)) {
       entry.outcome = outcome;
       mutated = true;

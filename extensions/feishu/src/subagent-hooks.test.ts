@@ -10,6 +10,16 @@ import {
   createFeishuThreadBindingManager,
 } from "./thread-bindings.js";
 
+const hoisted = vi.hoisted(() => ({
+  sendMessageFeishuMock: vi.fn<(params: unknown) => Promise<{ messageId: string }>>(
+    async () => ({ messageId: "m-1" }),
+  ),
+}));
+
+vi.mock("./send.js", () => ({
+  sendMessageFeishu: (params: unknown) => hoisted.sendMessageFeishuMock(params),
+}));
+
 const baseConfig = {
   session: { mainKey: "main", scope: "per-sender" },
   channels: { feishu: {} },
@@ -25,6 +35,7 @@ function registerHandlersForTest(config: Record<string, unknown> = baseConfig) {
 describe("feishu subagent hook handlers", () => {
   beforeEach(() => {
     threadBindingTesting.resetFeishuThreadBindingsForTests();
+    hoisted.sendMessageFeishuMock.mockClear();
   });
 
   it("registers Feishu subagent hooks", () => {
@@ -32,7 +43,82 @@ describe("feishu subagent hook handlers", () => {
     expect(handlers.has("subagent_spawning")).toBe(true);
     expect(handlers.has("subagent_delivery_target")).toBe(true);
     expect(handlers.has("subagent_ended")).toBe(true);
-    expect(handlers.has("subagent_spawned")).toBe(false);
+    expect(handlers.has("subagent_spawned")).toBe(true);
+  });
+
+  it("sends spawned and ended status updates with sensitive text redaction", async () => {
+    const handlers = registerHandlersForTest();
+    const spawnHandler = getRequiredHookHandler(handlers, "subagent_spawning");
+    const spawnedHandler = getRequiredHookHandler(handlers, "subagent_spawned");
+    const endedHandler = getRequiredHookHandler(handlers, "subagent_ended");
+
+    createFeishuThreadBindingManager({ cfg: baseConfig as any, accountId: "work" });
+
+    await spawnHandler(
+      {
+        childSessionKey: "agent:main:subagent:child",
+        agentId: "codex",
+        label: "stock lookup",
+        mode: "session",
+        requester: {
+          channel: "feishu",
+          accountId: "work",
+          to: "user:ou_sender_1",
+        },
+        threadRequested: true,
+      },
+      {
+        requesterSessionKey: "agent:main:main",
+      },
+    );
+
+    await spawnedHandler(
+      {
+        childSessionKey: "agent:main:subagent:child",
+        runId: "run-1",
+        taskId: "T-ABCD1234",
+        agentId: "codex",
+        label: "stock lookup",
+        mode: "session",
+        requester: {
+          channel: "feishu",
+          accountId: "work",
+          to: "user:ou_sender_1",
+        },
+        threadRequested: true,
+      },
+      {
+        requesterSessionKey: "agent:main:main",
+      },
+    );
+
+    endedHandler(
+      {
+        targetSessionKey: "agent:main:subagent:child",
+        targetKind: "subagent",
+        reason: "failed: password=abc123 token=XYZ",
+        accountId: "work",
+        outcome: "error",
+        error: "missing credential password=hunter2",
+      },
+      {},
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(hoisted.sendMessageFeishuMock).toHaveBeenCalled();
+    const sentTexts = (hoisted.sendMessageFeishuMock.mock.calls as unknown[][])
+      .map((call) => ((call[0] as { text?: string } | undefined)?.text ?? ""))
+      .join("\n");
+    expect(sentTexts).toContain("Current status:");
+    expect(sentTexts).toContain("Completed:");
+    expect(sentTexts).toContain("Need type:");
+    expect(sentTexts).toContain("Need from you:");
+    expect(sentTexts).toContain("[T-ABCD1234]");
+    expect(sentTexts).toContain("Blocked/failed");
+    expect(sentTexts).toContain("Reply example: for");
+    expect(sentTexts).toContain("password=[REDACTED]");
+    expect(sentTexts).not.toContain("hunter2");
   });
 
   it("binds a Feishu DM conversation on subagent_spawning", async () => {

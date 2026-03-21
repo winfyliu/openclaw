@@ -35,6 +35,7 @@ import {
   resolveQueueAnnounceId,
 } from "./announce-idempotency.js";
 import { formatAgentInternalEventsForPrompt, type AgentInternalEvent } from "./internal-events.js";
+import { resolveTaskByIdOrRun } from "./task-registry.js";
 import {
   isEmbeddedPiRunActive,
   queueEmbeddedPiMessage,
@@ -1035,10 +1036,12 @@ export function buildSubagentSystemPrompt(params: {
     "## Rules",
     "1. **Stay focused** - Do your assigned task, nothing else",
     `2. **Complete the task** - Your final message will be automatically reported to the ${parentLabel}`,
-    "3. **Don't initiate** - No heartbeats, no proactive actions, no side quests",
-    "4. **Be ephemeral** - You may be terminated after task completion. That's fine.",
-    "5. **Trust push-based completion** - Descendant results are auto-announced back to you; do not busy-poll for status.",
-    "6. **Recover from compacted/truncated tool output** - If you see `[compacted: tool output removed to free context]` or `[truncated: output exceeded context limit]`, assume prior output was reduced. Re-read only what you need using smaller chunks (`read` with offset/limit, or targeted `rg`/`head`/`tail`) instead of full-file `cat`.",
+    "3. **Plan before execution** - First produce a concise plan before you run tools or make changes.",
+    "4. **Evaluate before finishing** - After execution, verify whether the task is complete and call out remaining risks or missing input.",
+    "5. **Don't initiate** - No heartbeats, no proactive actions, no side quests",
+    "6. **Be ephemeral** - You may be terminated after task completion. That's fine.",
+    "7. **Trust push-based completion** - Descendant results are auto-announced back to you; do not busy-poll for status.",
+    "8. **Recover from compacted/truncated tool output** - If you see `[compacted: tool output removed to free context]` or `[truncated: output exceeded context limit]`, assume prior output was reduced. Re-read only what you need using smaller chunks (`read` with offset/limit, or targeted `rg`/`head`/`tail`) instead of full-file `cat`.",
     "",
     "## Output Format",
     "When complete, your final response should include:",
@@ -1488,6 +1491,11 @@ export async function runSubagentAnnounceFlow(params: {
       startedAt: params.startedAt,
       endedAt: params.endedAt,
     });
+    const trackedTask = resolveTaskByIdOrRun({
+      sessionKey: targetRequesterSessionKey,
+      runId: params.childRunId,
+    });
+
     const internalEvents: AgentInternalEvent[] = [
       {
         type: "task_completion",
@@ -1503,6 +1511,22 @@ export async function runSubagentAnnounceFlow(params: {
         replyInstruction,
       },
     ];
+    if (trackedTask?.taskId) {
+      internalEvents.push({
+        type: "task_progress",
+        taskId: trackedTask.taskId,
+        status:
+          outcome.status === "ok"
+            ? "completed"
+            : outcome.status === "timeout"
+              ? "timeout"
+              : outcome.status === "error"
+                ? "failed"
+                : "evaluating",
+        progress: outcome.status === "unknown" ? 90 : 100,
+        message: statusLabel,
+      });
+    }
     const triggerMessage = buildAnnounceSteerMessage(internalEvents);
 
     // Send to the requester session. For nested subagents this is an internal

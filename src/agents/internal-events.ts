@@ -1,4 +1,7 @@
-export type AgentInternalEventType = "task_completion";
+export type AgentInternalEventType =
+  | "task_completion"
+  | "task_progress"
+  | "task_blocked_user_input";
 
 export type AgentTaskCompletionInternalEvent = {
   type: "task_completion";
@@ -14,7 +17,34 @@ export type AgentTaskCompletionInternalEvent = {
   replyInstruction: string;
 };
 
-export type AgentInternalEvent = AgentTaskCompletionInternalEvent;
+export type AgentTaskProgressInternalEvent = {
+  type: "task_progress";
+  taskId: string;
+  status:
+    | "accepted"
+    | "planning"
+    | "executing"
+    | "evaluating"
+    | "completed"
+    | "failed"
+    | "timeout"
+    | "blocked"
+    | "cancelled";
+  progress?: number;
+  message?: string;
+};
+
+export type AgentTaskBlockedUserInputInternalEvent = {
+  type: "task_blocked_user_input";
+  taskId: string;
+  reason: "credentials" | "permission" | "missing_input" | "external_dependency" | "unknown";
+  request: string;
+};
+
+export type AgentInternalEvent =
+  | AgentTaskCompletionInternalEvent
+  | AgentTaskProgressInternalEvent
+  | AgentTaskBlockedUserInputInternalEvent;
 
 function formatTaskCompletionEvent(event: AgentTaskCompletionInternalEvent): string {
   const lines = [
@@ -38,6 +68,30 @@ function formatTaskCompletionEvent(event: AgentTaskCompletionInternalEvent): str
   return lines.join("\n");
 }
 
+function formatTaskProgressEvent(event: AgentTaskProgressInternalEvent): string {
+  const progressText =
+    typeof event.progress === "number" && Number.isFinite(event.progress)
+      ? `${Math.max(0, Math.min(100, Math.round(event.progress)))}%`
+      : "n/a";
+  const message = event.message?.trim();
+  return [
+    "[Internal task progress event]",
+    `task_id: ${event.taskId}`,
+    `status: ${event.status}`,
+    `progress: ${progressText}`,
+    ...(message ? [`message: ${message}`] : []),
+  ].join("\n");
+}
+
+function formatTaskBlockedEvent(event: AgentTaskBlockedUserInputInternalEvent): string {
+  return [
+    "[Internal task blocked event]",
+    `task_id: ${event.taskId}`,
+    `reason: ${event.reason}`,
+    `request: ${event.request}`,
+  ].join("\n");
+}
+
 export function formatAgentInternalEventsForPrompt(events?: AgentInternalEvent[]): string {
   if (!events || events.length === 0) {
     return "";
@@ -46,6 +100,12 @@ export function formatAgentInternalEventsForPrompt(events?: AgentInternalEvent[]
     .map((event) => {
       if (event.type === "task_completion") {
         return formatTaskCompletionEvent(event);
+      }
+      if (event.type === "task_progress") {
+        return formatTaskProgressEvent(event);
+      }
+      if (event.type === "task_blocked_user_input") {
+        return formatTaskBlockedEvent(event);
       }
       return "";
     })

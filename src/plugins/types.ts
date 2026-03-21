@@ -1835,6 +1835,7 @@ export type PluginHookSubagentDeliveryTargetResult = {
 // subagent_spawned hook
 export type PluginHookSubagentSpawnedEvent = PluginHookSubagentSpawnBase & {
   runId: string;
+  taskId?: string;
 };
 
 // subagent_ended hook

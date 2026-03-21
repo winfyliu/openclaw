@@ -3,17 +3,45 @@ import { InputProvenanceSchema, NonEmptyString, SessionLabelString } from "./pri
 
 export const AgentInternalEventSchema = Type.Object(
   {
-    type: Type.Literal("task_completion"),
-    source: Type.String({ enum: ["subagent", "cron"] }),
-    childSessionKey: Type.String(),
+    type: Type.String({
+      enum: ["task_completion", "task_progress", "task_blocked_user_input"],
+    }),
+    source: Type.Optional(Type.String({ enum: ["subagent", "cron"] })),
+    childSessionKey: Type.Optional(Type.String()),
     childSessionId: Type.Optional(Type.String()),
-    announceType: Type.String(),
-    taskLabel: Type.String(),
-    status: Type.String({ enum: ["ok", "timeout", "error", "unknown"] }),
-    statusLabel: Type.String(),
-    result: Type.String(),
+    announceType: Type.Optional(Type.String()),
+    taskLabel: Type.Optional(Type.String()),
+    status: Type.Optional(
+      Type.String({
+        enum: [
+          "accepted",
+          "planning",
+          "executing",
+          "evaluating",
+          "completed",
+          "failed",
+          "timeout",
+          "blocked",
+          "cancelled",
+          "ok",
+          "error",
+          "unknown",
+        ],
+      }),
+    ),
+    statusLabel: Type.Optional(Type.String()),
+    result: Type.Optional(Type.String()),
     statsLine: Type.Optional(Type.String()),
-    replyInstruction: Type.String(),
+    replyInstruction: Type.Optional(Type.String()),
+    taskId: Type.Optional(Type.String()),
+    progress: Type.Optional(Type.Number()),
+    message: Type.Optional(Type.String()),
+    reason: Type.Optional(
+      Type.String({
+        enum: ["credentials", "permission", "missing_input", "external_dependency", "unknown"],
+      }),
+    ),
+    request: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );

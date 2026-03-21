@@ -691,6 +691,8 @@ describe("buildSubagentSystemPrompt", () => {
     expect(prompt).toContain(
       "You CAN spawn your own sub-agents for parallel or complex work using `sessions_spawn`.",
     );
+    expect(prompt).toContain("Plan before execution");
+    expect(prompt).toContain("Evaluate before finishing");
     expect(prompt).toContain("sessions_spawn");
     expect(prompt).toContain('runtime: "acp"');
     expect(prompt).toContain("For ACP harness sessions (codex/claudecode/gemini)");

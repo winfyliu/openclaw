@@ -43,6 +43,14 @@ import { getGlobalHookRunner, getGlobalPluginRegistry } from "../../plugins/hook
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { maybeApplyTtsToPayload, normalizeTtsAutoMode, resolveTtsConfig } from "../../tts/tts.js";
 import { INTERNAL_MESSAGE_CHANNEL, normalizeMessageChannel } from "../../utils/message-channel.js";
+import {
+  buildCredentialResumeAck,
+  buildCredentialResumeStatusLine,
+  buildCredentialSelectionPrompt,
+  buildTaskProgressPanel,
+  forwardCredentialInputToTask,
+} from "../../agents/task-orchestrator.js";
+import { resolveCredentialResumeRouting } from "../../agents/task-resume.js";
 import { getReplyFromConfig } from "../reply.js";
 import type { FinalizedMsgContext } from "../templating.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
@@ -418,6 +426,56 @@ export async function dispatchReplyFromConfig(params: {
   markProcessing();
 
   try {
+    const inboundCommandBody = (
+      ctx.BodyForCommands ?? ctx.CommandBody ?? ctx.RawBody ?? ctx.Body ?? ""
+    ).trim();
+    if (sessionKey && inboundCommandBody) {
+      const resumeDecision = resolveCredentialResumeRouting({
+        sessionKey,
+        body: inboundCommandBody,
+      });
+      if (resumeDecision.kind === "needs_task_selection") {
+        const queuedFinal = dispatcher.sendFinalReply({
+          text: buildCredentialSelectionPrompt({
+            blockedTasks: resumeDecision.blockedTasks,
+          }),
+        });
+        const counts = dispatcher.getQueuedCounts();
+        recordProcessed("completed", { reason: "task_resume_needs_selection" });
+        markIdle("message_completed");
+        return { queuedFinal, counts };
+      }
+      if (resumeDecision.kind === "resume_task") {
+        const forwarded = await forwardCredentialInputToTask({
+          decision: resumeDecision,
+          requesterSessionKey: sessionKey,
+        });
+        const queuedFinal = dispatcher.sendFinalReply({
+          text: forwarded.forwarded
+            ? buildCredentialResumeAck(resumeDecision.task)
+            : `I received your input but could not resume that task yet: ${forwarded.error ?? "unknown error"}`,
+        });
+        if (forwarded.forwarded) {
+          dispatcher.sendToolResult({
+            text: buildCredentialResumeStatusLine(resumeDecision.task),
+          });
+        }
+        const counts = dispatcher.getQueuedCounts();
+        recordProcessed("completed", {
+          reason: forwarded.forwarded ? "task_resumed" : "task_resume_failed",
+        });
+        markIdle("message_completed");
+        return { queuedFinal, counts };
+      }
+    }
+
+    if (sessionKey && ctx.CommandSource !== "native") {
+      const panel = buildTaskProgressPanel(sessionKey);
+      if (panel) {
+        dispatcher.sendToolResult({ text: panel });
+      }
+    }
+
     const fastAbort = await tryFastAbortFromMessage({ ctx, cfg });
     if (fastAbort.handled) {
       const payload = {
