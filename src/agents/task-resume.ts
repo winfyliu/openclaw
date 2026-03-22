@@ -47,6 +47,35 @@ function parseCredentialFields(body: string): ParsedCredentialPayload | undefine
   };
 }
 
+function parsePermissionGrant(body: string): ParsedCredentialPayload | undefined {
+  const text = extractBodyText(body);
+  if (!text) {
+    return undefined;
+  }
+  const lowered = text.toLowerCase();
+  const hasPermissionKeyword =
+    lowered.includes("permission") ||
+    lowered.includes("authorize") ||
+    lowered.includes("approved") ||
+    lowered.includes("grant access") ||
+    lowered.includes("access granted") ||
+    lowered.includes("allowlist") ||
+    lowered.includes("whitelist") ||
+    lowered.includes("forbidden") ||
+    lowered.includes("unauthorized") ||
+    lowered.includes("已授权") ||
+    lowered.includes("授权") ||
+    lowered.includes("权限");
+  if (!hasPermissionKeyword) {
+    return undefined;
+  }
+
+  return {
+    fields: [],
+    raw: text,
+  };
+}
+
 function resolveExplicitTaskId(body: string): string | undefined {
   const match = body.match(TASK_ID_RE);
   if (!match) {
@@ -74,7 +103,7 @@ export function resolveCredentialResumeRouting(params: {
   sessionKey: string;
   body: string;
 }): ResumeRoutingDecision {
-  const credentials = parseCredentialFields(params.body);
+  const credentials = parseCredentialFields(params.body) ?? parsePermissionGrant(params.body);
   if (!credentials) {
     return { kind: "none" };
   }
@@ -111,7 +140,9 @@ export function resolveCredentialResumeRouting(params: {
     };
   }
 
-  const recentBlockedTask = listTasksForSession(params.sessionKey).find((task) => task.status === "blocked");
+  const recentBlockedTask = listTasksForSession(params.sessionKey).find(
+    (task) => task.status === "blocked",
+  );
   if (recentBlockedTask) {
     return {
       kind: "resume_task",

@@ -1,6 +1,14 @@
 import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import {
+  buildCredentialResumeAck,
+  buildCredentialResumeStatusLine,
+  buildCredentialSelectionPrompt,
+  buildTaskProgressPanel,
+  forwardCredentialInputToTask,
+} from "../../agents/task-orchestrator.js";
+import { resolveCredentialResumeRouting } from "../../agents/task-resume.js";
+import {
   resolveConversationBindingRecord,
   touchConversationBindingRecord,
 } from "../../bindings/records.js";
@@ -26,6 +34,7 @@ import {
 } from "../../hooks/message-hook-mappers.js";
 import { isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
 import {
+  logMessageFirstAck,
   logMessageProcessed,
   logMessageQueued,
   logSessionStateChange,
@@ -43,14 +52,6 @@ import { getGlobalHookRunner, getGlobalPluginRegistry } from "../../plugins/hook
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { maybeApplyTtsToPayload, normalizeTtsAutoMode, resolveTtsConfig } from "../../tts/tts.js";
 import { INTERNAL_MESSAGE_CHANNEL, normalizeMessageChannel } from "../../utils/message-channel.js";
-import {
-  buildCredentialResumeAck,
-  buildCredentialResumeStatusLine,
-  buildCredentialSelectionPrompt,
-  buildTaskProgressPanel,
-  forwardCredentialInputToTask,
-} from "../../agents/task-orchestrator.js";
-import { resolveCredentialResumeRouting } from "../../agents/task-resume.js";
 import { getReplyFromConfig } from "../reply.js";
 import type { FinalizedMsgContext } from "../templating.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
@@ -144,6 +145,22 @@ export async function dispatchReplyFromConfig(params: {
   const sessionKey = ctx.SessionKey;
   const startTime = diagnosticsEnabled ? Date.now() : 0;
   const canTrackSession = diagnosticsEnabled && Boolean(sessionKey);
+  let firstAckLogged = false;
+
+  const recordFirstAck = (reason: string) => {
+    if (!diagnosticsEnabled || firstAckLogged) {
+      return;
+    }
+    firstAckLogged = true;
+    logMessageFirstAck({
+      channel,
+      chatId,
+      messageId,
+      sessionKey,
+      ackLatencyMs: Date.now() - startTime,
+      reason,
+    });
+  };
 
   const recordProcessed = (
     outcome: "completed" | "skipped" | "error",
@@ -282,6 +299,8 @@ export async function dispatchReplyFromConfig(params: {
     });
     if (!result.ok) {
       logVerbose(`dispatch-from-config: route-reply failed: ${result.error ?? "unknown error"}`);
+    } else {
+      recordFirstAck("origin_route_reply");
     }
   };
 
@@ -305,6 +324,8 @@ export async function dispatchReplyFromConfig(params: {
         logVerbose(
           `dispatch-from-config: route-reply (plugin binding notice) failed: ${result.error ?? "unknown error"}`,
         );
+      } else {
+        recordFirstAck("plugin_binding_notice");
       }
       return result.ok;
     }
@@ -427,7 +448,11 @@ export async function dispatchReplyFromConfig(params: {
 
   try {
     const inboundCommandBody = (
-      ctx.BodyForCommands ?? ctx.CommandBody ?? ctx.RawBody ?? ctx.Body ?? ""
+      ctx.BodyForCommands ??
+      ctx.CommandBody ??
+      ctx.RawBody ??
+      ctx.Body ??
+      ""
     ).trim();
     if (sessionKey && inboundCommandBody) {
       const resumeDecision = resolveCredentialResumeRouting({
@@ -435,6 +460,7 @@ export async function dispatchReplyFromConfig(params: {
         body: inboundCommandBody,
       });
       if (resumeDecision.kind === "needs_task_selection") {
+        recordFirstAck("task_resume_needs_selection");
         const queuedFinal = dispatcher.sendFinalReply({
           text: buildCredentialSelectionPrompt({
             blockedTasks: resumeDecision.blockedTasks,
@@ -450,6 +476,7 @@ export async function dispatchReplyFromConfig(params: {
           decision: resumeDecision,
           requesterSessionKey: sessionKey,
         });
+        recordFirstAck(forwarded.forwarded ? "task_resumed" : "task_resume_failed");
         const queuedFinal = dispatcher.sendFinalReply({
           text: forwarded.forwarded
             ? buildCredentialResumeAck(resumeDecision.task)
@@ -472,6 +499,7 @@ export async function dispatchReplyFromConfig(params: {
     if (sessionKey && ctx.CommandSource !== "native") {
       const panel = buildTaskProgressPanel(sessionKey);
       if (panel) {
+        recordFirstAck("task_progress_panel");
         dispatcher.sendToolResult({ text: panel });
       }
     }
@@ -505,6 +533,7 @@ export async function dispatchReplyFromConfig(params: {
           );
         }
       } else {
+        recordFirstAck("fast_abort");
         queuedFinal = dispatcher.sendFinalReply(payload);
       }
       const counts = dispatcher.getQueuedCounts();
@@ -627,6 +656,7 @@ export async function dispatchReplyFromConfig(params: {
             if (shouldRouteToOriginating) {
               await sendPayloadAsync(deliveryPayload, undefined, false);
             } else {
+              recordFirstAck("tool_result");
               dispatcher.sendToolResult(deliveryPayload);
             }
           };
@@ -659,6 +689,7 @@ export async function dispatchReplyFromConfig(params: {
             if (shouldRouteToOriginating) {
               await sendPayloadAsync(ttsPayload, context?.abortSignal, false);
             } else {
+              recordFirstAck("block_reply");
               dispatcher.sendBlockReply(ttsPayload);
             }
           };
@@ -729,12 +760,15 @@ export async function dispatchReplyFromConfig(params: {
           logVerbose(
             `dispatch-from-config: route-reply (final) failed: ${result.error ?? "unknown error"}`,
           );
+        } else {
+          recordFirstAck("origin_final_reply");
         }
         queuedFinal = result.ok || queuedFinal;
         if (result.ok) {
           routedFinalCount += 1;
         }
       } else {
+        recordFirstAck("final_reply");
         queuedFinal = dispatcher.sendFinalReply(ttsReply) || queuedFinal;
       }
     }
@@ -779,6 +813,7 @@ export async function dispatchReplyFromConfig(params: {
             });
             queuedFinal = result.ok || queuedFinal;
             if (result.ok) {
+              recordFirstAck("origin_tts_only_reply");
               routedFinalCount += 1;
             }
             if (!result.ok) {
@@ -788,6 +823,9 @@ export async function dispatchReplyFromConfig(params: {
             }
           } else {
             const didQueue = dispatcher.sendFinalReply(ttsOnlyPayload);
+            if (didQueue) {
+              recordFirstAck("tts_only_reply");
+            }
             queuedFinal = didQueue || queuedFinal;
           }
         }

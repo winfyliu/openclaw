@@ -280,6 +280,8 @@ export type AgentDefaultsConfig = {
     maxSpawnDepth?: number;
     /** Maximum active children a single requester session may spawn. Default behavior: 5. */
     maxChildrenPerAgent?: number;
+    /** Maximum active orchestrator tasks tracked per requester session. Default behavior: 5. */
+    maxActiveTasksPerSession?: number;
     /** Auto-archive sub-agent sessions after N minutes (default: 60, set 0 to disable). */
     archiveAfterMinutes?: number;
     /** Default model selection for spawned sub-agents (string or {primary,fallbacks}). */

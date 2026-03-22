@@ -359,6 +359,16 @@ jobs:
         continue-on-error: true
         run: pnpm test:gateway:watch-regression
 
+      - name: Run Harness capability eval suite
+        id: harness_capability_eval
+        continue-on-error: true
+        run: pnpm test:harness:capability-eval
+
+      - name: Run Harness regression suite
+        id: harness_regression_suite
+        continue-on-error: true
+        run: pnpm test:harness:regression
+
       - name: Check config docs drift statefile
         id: config_docs_drift
         continue-on-error: true
@@ -381,6 +391,8 @@ jobs:
           EXTENSION_PLUGIN_SDK_INTERNAL_BOUNDARY_OUTCOME: ${{ steps.extension_plugin_sdk_internal_boundary.outcome }}
           NO_RAW_WINDOW_OPEN_OUTCOME: ${{ steps.no_raw_window_open.outcome }}
           GATEWAY_WATCH_REGRESSION_OUTCOME: ${{ steps.gateway_watch_regression.outcome }}
+          HARNESS_CAPABILITY_EVAL_OUTCOME: ${{ steps.harness_capability_eval.outcome }}
+          HARNESS_REGRESSION_SUITE_OUTCOME: ${{ steps.harness_regression_suite.outcome }}
           CONFIG_DOCS_DRIFT_OUTCOME: ${{ steps.config_docs_drift.outcome }}
         run: |
           failures=0
@@ -391,6 +403,8 @@ jobs:
             "extension-plugin-sdk-internal-boundary|$EXTENSION_PLUGIN_SDK_INTERNAL_BOUNDARY_OUTCOME" \
             "lint:ui:no-raw-window-open|$NO_RAW_WINDOW_OPEN_OUTCOME" \
             "gateway-watch-regression|$GATEWAY_WATCH_REGRESSION_OUTCOME" \
+            "harness-capability-eval|$HARNESS_CAPABILITY_EVAL_OUTCOME" \
+            "harness-regression-suite|$HARNESS_REGRESSION_SUITE_OUTCOME" \
             "config-docs-drift|$CONFIG_DOCS_DRIFT_OUTCOME"; do
             name="${result%%|*}"
             outcome="${result#*|}"

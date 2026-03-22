@@ -43,6 +43,8 @@ import type {
   PluginHookSubagentContext,
   PluginHookSubagentDeliveryTargetEvent,
   PluginHookSubagentDeliveryTargetResult,
+  PluginHookSubagentCompletionVerificationEvent,
+  PluginHookSubagentCompletionVerificationResult,
   PluginHookSubagentSpawningEvent,
   PluginHookSubagentSpawningResult,
   PluginHookSubagentEndedEvent,
@@ -93,6 +95,8 @@ export type {
   PluginHookSubagentContext,
   PluginHookSubagentDeliveryTargetEvent,
   PluginHookSubagentDeliveryTargetResult,
+  PluginHookSubagentCompletionVerificationEvent,
+  PluginHookSubagentCompletionVerificationResult,
   PluginHookSubagentSpawningEvent,
   PluginHookSubagentSpawningResult,
   PluginHookSubagentSpawnedEvent,
@@ -212,6 +216,22 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
       return acc;
     }
     return next;
+  };
+
+  const mergeSubagentCompletionVerificationResult = (
+    acc: PluginHookSubagentCompletionVerificationResult | undefined,
+    next: PluginHookSubagentCompletionVerificationResult,
+  ): PluginHookSubagentCompletionVerificationResult => {
+    if (acc?.decision === "reject") {
+      return acc;
+    }
+    if (next.decision === "reject") {
+      return next;
+    }
+    if (acc?.decision === "allow" || next.decision === "allow") {
+      return { decision: "allow" };
+    }
+    return { decision: "skip" };
   };
 
   const handleHookError = (params: {
@@ -853,6 +873,20 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
   }
 
   /**
+   * Run subagent_completion_verification hook.
+   * Runs sequentially so verification decisions are deterministic.
+   */
+  async function runSubagentCompletionVerification(
+    event: PluginHookSubagentCompletionVerificationEvent,
+    ctx: PluginHookSubagentContext,
+  ): Promise<PluginHookSubagentCompletionVerificationResult | undefined> {
+    return runModifyingHook<
+      "subagent_completion_verification",
+      PluginHookSubagentCompletionVerificationResult
+    >("subagent_completion_verification", event, ctx, mergeSubagentCompletionVerificationResult);
+  }
+
+  /**
    * Run subagent_spawned hook.
    * Runs in parallel (fire-and-forget).
    */
@@ -947,6 +981,7 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
     runSessionEnd,
     runSubagentSpawning,
     runSubagentDeliveryTarget,
+    runSubagentCompletionVerification,
     runSubagentSpawned,
     runSubagentEnded,
     // Gateway hooks

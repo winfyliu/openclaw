@@ -35,7 +35,6 @@ import {
   resolveQueueAnnounceId,
 } from "./announce-idempotency.js";
 import { formatAgentInternalEventsForPrompt, type AgentInternalEvent } from "./internal-events.js";
-import { resolveTaskByIdOrRun } from "./task-registry.js";
 import {
   isEmbeddedPiRunActive,
   queueEmbeddedPiMessage,
@@ -46,8 +45,10 @@ import {
   type SubagentAnnounceDeliveryResult,
 } from "./subagent-announce-dispatch.js";
 import { type AnnounceQueueItem, enqueueAnnounce } from "./subagent-announce-queue.js";
+import type { SubagentSessionRole } from "./subagent-capabilities.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import type { SpawnSubagentMode } from "./subagent-spawn.js";
+import { resolveTaskByIdOrRun } from "./task-registry.js";
 import { sanitizeTextContent, extractAssistantText } from "./tools/sessions-helpers.js";
 import { isAnnounceSkip } from "./tools/sessions-send-helpers.js";
 
@@ -1003,6 +1004,7 @@ export function buildSubagentSystemPrompt(params: {
   childSessionKey: string;
   label?: string;
   task?: string;
+  childRole?: SubagentSessionRole;
   /** Whether ACP-specific routing guidance should be included. Defaults to true. */
   acpEnabled?: boolean;
   /** Depth of the child being spawned (1 = sub-agent, 2 = sub-sub-agent). */
@@ -1019,8 +1021,11 @@ export function buildSubagentSystemPrompt(params: {
     typeof params.maxSpawnDepth === "number"
       ? params.maxSpawnDepth
       : DEFAULT_SUBAGENT_MAX_SPAWN_DEPTH;
+  const resolvedRole: SubagentSessionRole =
+    params.childRole ??
+    (childDepth <= 0 ? "main" : childDepth < maxSpawnDepth ? "orchestrator" : "leaf");
   const acpEnabled = params.acpEnabled !== false;
-  const canSpawn = childDepth < maxSpawnDepth;
+  const canSpawn = resolvedRole === "main" || resolvedRole === "orchestrator";
   const parentLabel = childDepth >= 2 ? "parent orchestrator" : "main agent";
 
   const lines = [
@@ -1030,6 +1035,15 @@ export function buildSubagentSystemPrompt(params: {
     "",
     "## Your Role",
     `- You were created to handle: ${taskText}`,
+    ...(resolvedRole === "orchestrator"
+      ? [
+          "- You are the planner-first coordinator: break work into plans, delegate when useful, then synthesize outcomes.",
+        ]
+      : resolvedRole === "leaf"
+        ? [
+            "- You are the executor-first specialist: execute scoped work directly and report concise findings back.",
+          ]
+        : ["- You are operating as the main coordinator for this task scope.".trim()]),
     "- Complete this task. That's your entire purpose.",
     `- You are NOT the ${parentLabel}. Don't try to be.`,
     "",
@@ -1084,7 +1098,7 @@ export function buildSubagentSystemPrompt(params: {
         : []),
       "",
     );
-  } else if (childDepth >= 2) {
+  } else if (resolvedRole === "leaf" && (params.childRole === "leaf" || childDepth >= 2)) {
     lines.push(
       "## Sub-Agent Spawning",
       "You are a leaf worker and CANNOT spawn further sub-agents. Focus on your assigned task.",

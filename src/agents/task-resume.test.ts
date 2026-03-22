@@ -85,4 +85,22 @@ describe("task-resume routing", () => {
       expect(decision.task.taskId).toBe("T-BBBB2222");
     }
   });
+
+  it("routes permission grant messages for a single blocked task", async () => {
+    const { resolveCredentialResumeRouting } = await import("./task-resume.js");
+    const decision = resolveCredentialResumeRouting({
+      sessionKey: "one",
+      body: "permission granted, you can continue now",
+    });
+    expect(decision.kind).toBe("resume_task");
+  });
+
+  it("asks for task selection when permission grant is ambiguous across multiple tasks", async () => {
+    const { resolveCredentialResumeRouting } = await import("./task-resume.js");
+    const decision = resolveCredentialResumeRouting({
+      sessionKey: "multi",
+      body: "I have authorized this, proceed",
+    });
+    expect(decision.kind).toBe("needs_task_selection");
+  });
 });

@@ -692,6 +692,7 @@ describe("buildSubagentSystemPrompt", () => {
       "You CAN spawn your own sub-agents for parallel or complex work using `sessions_spawn`.",
     );
     expect(prompt).toContain("Plan before execution");
+    expect(prompt).toContain("planner-first coordinator");
     expect(prompt).toContain("Evaluate before finishing");
     expect(prompt).toContain("sessions_spawn");
     expect(prompt).toContain('runtime: "acp"');
@@ -744,6 +745,7 @@ describe("buildSubagentSystemPrompt", () => {
 
     expect(prompt).toContain("## Sub-Agent Spawning");
     expect(prompt).toContain("leaf worker");
+    expect(prompt).toContain("executor-first specialist");
     expect(prompt).toContain("CANNOT spawn further sub-agents");
     expect(prompt).toContain("spawned by the parent orchestrator");
     expect(prompt).toContain("reported to the parent orchestrator");
@@ -779,5 +781,27 @@ describe("buildSubagentSystemPrompt", () => {
         expect(prompt, testCase.name).toContain("spawned by the main agent");
       }
     }
+  });
+
+  it("supports explicit child role overrides for specialization baseline", () => {
+    const plannerPrompt = buildSubagentSystemPrompt({
+      childSessionKey: "agent:main:subagent:planner-role",
+      task: "coordinate plan",
+      childDepth: 2,
+      maxSpawnDepth: 2,
+      childRole: "orchestrator",
+    });
+    expect(plannerPrompt).toContain("planner-first coordinator");
+    expect(plannerPrompt).toContain("You CAN spawn your own sub-agents");
+
+    const executorPrompt = buildSubagentSystemPrompt({
+      childSessionKey: "agent:main:subagent:executor-role",
+      task: "execute leaf work",
+      childDepth: 1,
+      maxSpawnDepth: 3,
+      childRole: "leaf",
+    });
+    expect(executorPrompt).toContain("executor-first specialist");
+    expect(executorPrompt).toContain("CANNOT spawn further sub-agents");
   });
 });

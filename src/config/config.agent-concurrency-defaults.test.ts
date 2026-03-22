@@ -35,6 +35,7 @@ describe("agent concurrency defaults", () => {
           subagents: {
             maxSpawnDepth: 2,
             maxChildrenPerAgent: 7,
+            maxActiveTasksPerSession: 6,
           },
         },
       },
@@ -42,6 +43,7 @@ describe("agent concurrency defaults", () => {
 
     expect(parsed.agents?.defaults?.subagents?.maxSpawnDepth).toBe(2);
     expect(parsed.agents?.defaults?.subagents?.maxChildrenPerAgent).toBe(7);
+    expect(parsed.agents?.defaults?.subagents?.maxActiveTasksPerSession).toBe(6);
   });
 
   it("injects defaults on load", async () => {

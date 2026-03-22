@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { importFreshModule } from "../../test/helpers/import-fresh.js";
+import { CommandLane } from "./lanes.js";
 
 const diagnosticMocks = vi.hoisted(() => ({
   logLaneEnqueue: vi.fn(),
@@ -348,6 +349,34 @@ describe("command queue", () => {
     markGatewayDraining();
     resetAllLanes();
     await expect(enqueueCommand(async () => "ok")).resolves.toBe("ok");
+  });
+
+  it("keeps main lane responsive while subagent lane is blocked", async () => {
+    setCommandLaneConcurrency(CommandLane.Main, 1);
+    setCommandLaneConcurrency(CommandLane.Subagent, 1);
+
+    const subagentDeferred = createDeferred();
+    const blockedSubagent = enqueueCommandInLane(CommandLane.Subagent, async () => {
+      await subagentDeferred.promise;
+      return "subagent-done";
+    });
+
+    await vi.waitFor(() => {
+      expect(getQueueSize(CommandLane.Subagent)).toBe(1);
+      expect(getActiveTaskCount()).toBe(1);
+    });
+
+    let mainExecuted = false;
+    const interactiveMainTask = enqueueCommandInLane(CommandLane.Main, async () => {
+      mainExecuted = true;
+      return "main-done";
+    });
+
+    await expect(interactiveMainTask).resolves.toBe("main-done");
+    expect(mainExecuted).toBe(true);
+
+    subagentDeferred.resolve();
+    await expect(blockedSubagent).resolves.toBe("subagent-done");
   });
 
   it("shares lane state across distinct module instances", async () => {

@@ -18,7 +18,6 @@ import {
 } from "../routing/session-key.js";
 import { emitSessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
-import { registerSpawnedSubagentTask } from "./task-orchestrator.js";
 import { resolveAgentConfig } from "./agent-scope.js";
 import { AGENT_LANE_SUBAGENT } from "./lanes.js";
 import { resolveSubagentSpawnModelSelection } from "./model-selection.js";
@@ -37,6 +36,8 @@ import {
 import { resolveSubagentCapabilities } from "./subagent-capabilities.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import { countActiveRunsForSession, registerSubagentRun } from "./subagent-registry.js";
+import { registerSpawnedSubagentTask } from "./task-orchestrator.js";
+import { countActiveTasksForSession } from "./task-registry.js";
 import { readStringParam } from "./tools/common.js";
 import {
   resolveDisplaySessionKey,
@@ -388,6 +389,15 @@ export async function spawnSubagentDirect(
     };
   }
 
+  const maxActiveTasks = cfg.agents?.defaults?.subagents?.maxActiveTasksPerSession ?? 5;
+  const activeTasks = countActiveTasksForSession(requesterInternalKey);
+  if (activeTasks >= maxActiveTasks) {
+    return {
+      status: "forbidden",
+      error: `sessions_spawn has reached max active tasks for this session (${activeTasks}/${maxActiveTasks})`,
+    };
+  }
+
   const requesterAgentId = normalizeAgentId(
     ctx.requesterAgentIdOverride ?? parseAgentSessionKey(requesterInternalKey)?.agentId,
   );
@@ -561,6 +571,7 @@ export async function spawnSubagentDirect(
     childSessionKey,
     label: label || undefined,
     task,
+    childRole: childCapabilities.role,
     acpEnabled: cfg.acp?.enabled !== false && !childRuntime.sandboxed,
     childDepth,
     maxSpawnDepth,

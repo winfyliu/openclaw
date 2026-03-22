@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { loadConfig } from "../config/config.js";
 import {
   loadSessionStore,
   mergeSessionEntry,
@@ -7,10 +8,11 @@ import {
   type SessionTaskRuntimeEntry,
   type SessionTaskRuntimeState,
 } from "../config/sessions.js";
-import { loadConfig } from "../config/config.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { resolveSessionAgentId } from "./agent-scope.js";
 import {
+  allowedTaskTransitions,
+  canTransitionTaskStatus,
   isTerminalTaskStatus,
   normalizeTaskProgress,
   type TaskBlockedReason,
@@ -32,6 +34,7 @@ export type TaskRecord = {
   blockedReason?: TaskBlockedReason;
   blockedRequest?: string;
   blockedAt?: number;
+  blockedStale?: boolean;
   lastVersion: number;
   lastEventId?: string;
   createdAt: number;
@@ -56,6 +59,8 @@ const state = resolveGlobalSingleton<TaskRegistryState>(TASK_REGISTRY_KEY, () =>
 
 const TASK_RUNTIME_SCHEMA_VERSION = 1;
 const MAX_PERSISTED_TASKS_PER_SESSION = 40;
+const TASK_TERMINAL_RETENTION_MS = 6 * 60 * 60 * 1000;
+const TASK_BLOCKED_STALE_AFTER_MS = 15 * 60 * 1000;
 
 function toStoreTaskEntry(record: TaskRecord): SessionTaskRuntimeEntry {
   return {
@@ -77,7 +82,10 @@ function toStoreTaskEntry(record: TaskRecord): SessionTaskRuntimeEntry {
   };
 }
 
-function fromStoreTaskEntry(sessionKey: string, entry: SessionTaskRuntimeEntry): TaskRecord | undefined {
+function fromStoreTaskEntry(
+  sessionKey: string,
+  entry: SessionTaskRuntimeEntry,
+): TaskRecord | undefined {
   const taskId = entry.taskId?.trim().toUpperCase();
   if (!taskId) {
     return undefined;
@@ -121,7 +129,7 @@ function persistSessionTasks(sessionKey: string): void {
     return;
   }
   const persistedTasks = [...sessionState.byId.values()]
-    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .toSorted((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, MAX_PERSISTED_TASKS_PER_SESSION)
     .map(toStoreTaskEntry);
   const storePath = resolveSessionStorePath(cleanSessionKey);
@@ -204,11 +212,75 @@ function cloneTask(record: TaskRecord): TaskRecord {
   return { ...record };
 }
 
+function isBlockedTaskStale(record: TaskRecord, now = Date.now()): boolean {
+  if (record.status !== "blocked") {
+    return false;
+  }
+  if (typeof record.blockedAt !== "number" || !Number.isFinite(record.blockedAt)) {
+    return false;
+  }
+  return now - record.blockedAt >= TASK_BLOCKED_STALE_AFTER_MS;
+}
+
+function toPublicTaskRecord(record: TaskRecord, now = Date.now()): TaskRecord {
+  const cloned = cloneTask(record);
+  if (isBlockedTaskStale(record, now)) {
+    cloned.blockedStale = true;
+  } else {
+    cloned.blockedStale = undefined;
+  }
+  return cloned;
+}
+
+function applySessionTaskGcPolicy(sessionState: SessionTaskState, now = Date.now()): boolean {
+  let changed = false;
+  const deadline = now - TASK_TERMINAL_RETENTION_MS;
+  for (const [taskId, task] of sessionState.byId.entries()) {
+    if (!isTerminalTaskStatus(task.status)) {
+      continue;
+    }
+    const terminalAt =
+      typeof task.completedAt === "number" && Number.isFinite(task.completedAt)
+        ? task.completedAt
+        : task.updatedAt;
+    if (terminalAt > deadline) {
+      continue;
+    }
+    sessionState.byId.delete(taskId);
+    if (task.runId) {
+      sessionState.byRunId.delete(task.runId);
+    }
+    changed = true;
+  }
+  return changed;
+}
+
+function runSessionTaskGcPolicy(sessionKey: string): void {
+  const key = sessionKey.trim() || "global";
+  const sessionState = getSessionState(key);
+  if (!applySessionTaskGcPolicy(sessionState)) {
+    return;
+  }
+  persistSessionTasks(key);
+}
+
+function nextTaskStatusFromEvent(event: TaskEvent): TaskStatus {
+  if (event.type === "task_blocked_user_input") {
+    return "blocked";
+  }
+  return event.status;
+}
+
 function updateTaskFromEvent(record: TaskRecord, event: TaskEvent): boolean {
   if (record.lastEventId && record.lastEventId === event.eventId) {
     return false;
   }
   if (event.version <= record.lastVersion) {
+    return false;
+  }
+
+  const nextStatus = nextTaskStatusFromEvent(event);
+  if (!canTransitionTaskStatus(record.status, nextStatus)) {
     return false;
   }
 
@@ -246,12 +318,14 @@ export function createTrackedTask(params: {
   childSessionKey?: string;
   taskId?: string;
 }): TaskRecord {
-  const sessionState = getSessionState(params.sessionKey);
+  const sessionKey = params.sessionKey.trim() || "global";
+  const sessionState = getSessionState(sessionKey);
+  runSessionTaskGcPolicy(sessionKey);
   const now = Date.now();
   const taskId = (params.taskId?.trim() || `T-${randomUUID().slice(0, 8)}`).toUpperCase();
   const record: TaskRecord = {
     taskId,
-    sessionKey: params.sessionKey,
+    sessionKey,
     runId: params.runId?.trim() || undefined,
     childSessionKey: params.childSessionKey?.trim() || undefined,
     title: params.title.trim() || "Untitled task",
@@ -265,8 +339,8 @@ export function createTrackedTask(params: {
   if (record.runId) {
     sessionState.byRunId.set(record.runId, record.taskId);
   }
-  persistSessionTasks(params.sessionKey);
-  return cloneTask(record);
+  persistSessionTasks(sessionKey);
+  return toPublicTaskRecord(record);
 }
 
 export function linkTaskRunId(params: {
@@ -274,7 +348,9 @@ export function linkTaskRunId(params: {
   taskId: string;
   runId: string;
 }): boolean {
-  const sessionState = getSessionState(params.sessionKey);
+  const sessionKey = params.sessionKey.trim() || "global";
+  const sessionState = getSessionState(sessionKey);
+  runSessionTaskGcPolicy(sessionKey);
   const record = sessionState.byId.get(params.taskId.trim().toUpperCase());
   const runId = params.runId.trim();
   if (!record || !runId) {
@@ -286,7 +362,7 @@ export function linkTaskRunId(params: {
   record.runId = runId;
   record.updatedAt = Date.now();
   sessionState.byRunId.set(runId, record.taskId);
-  persistSessionTasks(params.sessionKey);
+  persistSessionTasks(sessionKey);
   return true;
 }
 
@@ -297,6 +373,9 @@ export function updateTaskFromRunEvent(params: {
   const runId = params.runId.trim();
   if (!runId) {
     return undefined;
+  }
+  for (const sessionKey of state.sessions.keys()) {
+    runSessionTaskGcPolicy(sessionKey);
   }
   const sessionState = findSessionStateByRunId(runId);
   if (!sessionState) {
@@ -314,21 +393,41 @@ export function updateTaskFromRunEvent(params: {
     return undefined;
   }
   persistSessionTasks(record.sessionKey);
-  return cloneTask(record);
+  return toPublicTaskRecord(record);
+}
+
+export function validateTaskTransition(params: { current: TaskStatus; next: TaskStatus }): {
+  valid: boolean;
+  allowed: readonly TaskStatus[];
+} {
+  return {
+    valid: canTransitionTaskStatus(params.current, params.next),
+    allowed: allowedTaskTransitions(params.current),
+  };
 }
 
 export function listTasksForSession(sessionKey: string): TaskRecord[] {
-  const sessionState = state.sessions.get(sessionKey.trim() || "global");
-  if (!sessionState) {
-    return [];
-  }
+  const key = sessionKey.trim() || "global";
+  runSessionTaskGcPolicy(key);
+  const sessionState = getSessionState(key);
   return [...sessionState.byId.values()]
-    .map(cloneTask)
-    .sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt);
+    .map((task) => toPublicTaskRecord(task))
+    .toSorted((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt);
 }
 
 export function getBlockedTasksForSession(sessionKey: string): TaskRecord[] {
   return listTasksForSession(sessionKey).filter((task) => task.status === "blocked");
+}
+
+export function getStaleBlockedTasksForSession(sessionKey: string): TaskRecord[] {
+  return listTasksForSession(sessionKey).filter(
+    (task) => task.status === "blocked" && task.blockedStale,
+  );
+}
+
+export function countActiveTasksForSession(sessionKey: string): number {
+  return listTasksForSession(sessionKey).filter((task) => !isTerminalTaskStatus(task.status))
+    .length;
 }
 
 export function resolveTaskByIdOrRun(params: {
@@ -336,14 +435,13 @@ export function resolveTaskByIdOrRun(params: {
   taskId?: string;
   runId?: string;
 }): TaskRecord | undefined {
-  const sessionState = state.sessions.get(params.sessionKey.trim() || "global");
-  if (!sessionState) {
-    return undefined;
-  }
+  const key = params.sessionKey.trim() || "global";
+  runSessionTaskGcPolicy(key);
+  const sessionState = getSessionState(key);
   const taskId = params.taskId?.trim().toUpperCase();
   if (taskId) {
     const byId = sessionState.byId.get(taskId);
-    return byId ? cloneTask(byId) : undefined;
+    return byId ? toPublicTaskRecord(byId) : undefined;
   }
   const runId = params.runId?.trim();
   if (!runId) {
@@ -354,13 +452,16 @@ export function resolveTaskByIdOrRun(params: {
     return undefined;
   }
   const byRun = sessionState.byId.get(mappedTaskId);
-  return byRun ? cloneTask(byRun) : undefined;
+  return byRun ? toPublicTaskRecord(byRun) : undefined;
 }
 
 export function resolveTaskByRunId(runId: string): TaskRecord | undefined {
   const cleaned = runId.trim();
   if (!cleaned) {
     return undefined;
+  }
+  for (const sessionKey of state.sessions.keys()) {
+    runSessionTaskGcPolicy(sessionKey);
   }
   const sessionState = findSessionStateByRunId(cleaned);
   if (!sessionState) {
@@ -371,5 +472,5 @@ export function resolveTaskByRunId(runId: string): TaskRecord | undefined {
     return undefined;
   }
   const record = sessionState.byId.get(taskId);
-  return record ? cloneTask(record) : undefined;
+  return record ? toPublicTaskRecord(record) : undefined;
 }

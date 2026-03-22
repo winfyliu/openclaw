@@ -27,13 +27,13 @@ OpenClaw is in a strong early operational stage for Harness Engineering and has 
 
 ### Current maturity (internal rubric)
 
-| Dimension | Status | Notes |
-|-----------|--------|-------|
-| Control plane | Strong | Task registry, status machine, resume routing are in place |
-| Execution plane | Medium-strong | Subagent lifecycle is robust; role specialization is partial |
-| User collaboration | Medium-strong | Progress/status is visible; recovery prompts are structured |
-| Observability/evals | Medium | Targeted tests exist; broader capability/regression harness needed |
-| Long-run operations | Medium | GC/backpressure/specialization need full production hardening |
+| Dimension           | Status        | Notes                                                              |
+| ------------------- | ------------- | ------------------------------------------------------------------ |
+| Control plane       | Strong        | Task registry, status machine, resume routing are in place         |
+| Execution plane     | Medium-strong | Subagent lifecycle is robust; role specialization is partial       |
+| User collaboration  | Medium-strong | Progress/status is visible; recovery prompts are structured        |
+| Observability/evals | Medium        | Targeted tests exist; broader capability/regression harness needed |
+| Long-run operations | Medium        | GC/backpressure/specialization need full production hardening      |
 
 ## Reference Architecture (OpenClaw)
 
@@ -131,9 +131,24 @@ OpenClaw is in a strong early operational stage for Harness Engineering and has 
 
 Append architecture and policy decisions here with date and rationale.
 
-| Date | Decision | Why |
-|------|----------|-----|
-| YYYY-MM-DD | TBD | TBD |
+| Date       | Decision                                                                                                      | Why                                                                                                                                                                   |
+| ---------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-03-22 | Enforce task transition validation before applying event updates                                              | Prevents illegal terminal-to-active rollback and keeps lifecycle auditable                                                                                            |
+| 2026-03-22 | Keep idempotent event gate (eventId + version) as hard precondition                                           | Ensures replay and out-of-order events do not corrupt task state                                                                                                      |
+| 2026-03-22 | Add explicit `message.first_ack` diagnostic event across dispatch paths                                       | Makes responsiveness measurable and supports FirstAckLatencyP95 SLO tracking                                                                                          |
+| 2026-03-22 | Add lane-isolation regression test for main vs subagent queue behavior                                        | Confirms interactive main-lane work remains responsive under concurrent subagent backlog and prevents cross-lane starvation regressions                               |
+| 2026-03-22 | Expand blocked-resume routing to include permission-grant messages in addition to credential key/value inputs | Keeps task recovery reliable when users reply with approval language ("permission granted") and preserves explicit selection behavior when multiple tasks are blocked |
+| 2026-03-22 | Restrict task progress panel to active statuses and suppress terminal-only panels                             | Keeps collaboration updates focused on actionable work, reduces completion noise, and preserves coherent status visibility during concurrent sessions                 |
+| 2026-03-22 | Apply bounded exponential retry policy to resume-forward gateway calls                                        | Improves resilience to transient gateway failures while capping retry attempts and delay growth to prevent retry storms                                               |
+| 2026-03-22 | Add explicit non-retryable classification for resume-forward delivery errors                                  | Prevents futile retries on permanent failures (invalid recipient/permission/channel errors) and keeps retry budget available for transient outages                    |
+| 2026-03-22 | Enforce task GC policy with terminal eviction and stale-blocked annotation                                    | Prevents task registry bloat from long-finished tasks and surfaces blocked tasks that exceed intervention window for better operator triage                           |
+| 2026-03-22 | Introduce task resource lock domains and apply per-task locking on resume forwarding                          | Serializes competing shared writes on the same task while retaining concurrent execution for unrelated task/domain combinations                                       |
+| 2026-03-22 | Enforce per-session active task budget controls on subagent spawn/task registration                           | Adds deterministic backpressure under session-level load and prevents unbounded active task fan-out during sustained orchestration bursts                             |
+| 2026-03-22 | Introduce explicit planner/executor role-specialization baseline in subagent prompts                          | Clarifies orchestrator-vs-leaf operating mode so subagents coordinate and execute with more consistent behavior across nested task hierarchies                        |
+| 2026-03-22 | Gate completion transitions through a `subagent_completion_verification` hook                                 | Prevents unverified "ok" outcomes from auto-completing tasks and routes verification failures into structured blocked states for remediation                          |
+| 2026-03-22 | Add executable capability eval suite for core async/session scenarios                                         | Converts qualitative Harness expectations into repeatable score-based checks and makes capability drift measurable over time                                          |
+| 2026-03-22 | Wire Harness regression suite and capability eval into CI additional gates                                    | Ensures release-candidate changes are blocked when Harness-focused regressions or capability-score failures appear                                                    |
+| 2026-03-22 | Standardize transcript-grading review loop with local artifact output                                         | Enables periodic transcript sampling with comparable metrics and creates a concrete feedback loop for quality drift detection                                         |
 
 ## Review Update Protocol (Living Section)
 
