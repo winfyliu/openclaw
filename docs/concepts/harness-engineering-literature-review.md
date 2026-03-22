@@ -36,11 +36,11 @@ This document synthesizes insights from multiple sources on Harness Engineering.
 
 The most profound insight is that Harness Engineering is not new—it is **control theory applied to code**:
 
-| Era | System | Engineer Role |
-|-----|--------|---------------|
-| 1780s | Watt's centrifugal governor | From manually turning valves → designing the governor |
-| 2010s | Kubernetes controllers | From restarting pods → writing target specs |
-| 2020s | LLM + Harness | From writing code → designing constraints and feedback loops |
+| Era   | System                      | Engineer Role                                                |
+| ----- | --------------------------- | ------------------------------------------------------------ |
+| 1780s | Watt's centrifugal governor | From manually turning valves → designing the governor        |
+| 2010s | Kubernetes controllers      | From restarting pods → writing target specs                  |
+| 2020s | LLM + Harness               | From writing code → designing constraints and feedback loops |
 
 #### Key Insight
 
@@ -50,11 +50,11 @@ The most profound insight is that Harness Engineering is not new—it is **contr
 
 #### Feasibility Assessment
 
-| Aspect | Rating | Notes |
-|--------|--------|-------|
-| Theoretical soundness | ⭐⭐⭐⭐⭐ | Grounded in established control theory |
-| Implementation complexity | ⭐⭐⭐ | Requires significant upfront investment |
-| Applicability to existing projects | ⭐⭐ | Brownfield projects face "alert fatigue" |
+| Aspect                             | Rating     | Notes                                    |
+| ---------------------------------- | ---------- | ---------------------------------------- |
+| Theoretical soundness              | ⭐⭐⭐⭐⭐ | Grounded in established control theory   |
+| Implementation complexity          | ⭐⭐⭐     | Requires significant upfront investment  |
+| Applicability to existing projects | ⭐⭐       | Brownfield projects face "alert fatigue" |
 
 ---
 
@@ -66,10 +66,10 @@ The most profound insight is that Harness Engineering is not new—it is **contr
 
 The key breakthrough is **not more context. but better context**:
 
-| Approach | Token Cost | Efficiency |
-|----------|-----------|------------|
+| Approach                             | Token Cost    | Efficiency    |
+| ------------------------------------ | ------------- | ------------- |
 | Static loading (all context upfront) | 25.000 tokens | 0.8% relevant |
-| Progressive disclosure (on-demand) | 955 tokens | 100% relevant |
+| Progressive disclosure (on-demand)   | 955 tokens    | 100% relevant |
 
 **Improvement: 26x efficiency gain**
 
@@ -86,20 +86,20 @@ Context Utilization:
 
 #### Implementation Patterns
 
-| Pattern | Source | Description |
-|---------|--------|-------------|
-| SKILL.md | Claude Code | Skills loaded only when relevant |
-| Delayed MCP loading | Cursor | Tool definitions loaded on-demand |
-| File system offloading | Manus | Context stored in files. not memory |
-| todo.md pattern | Multiple | Plan kept in recent attention zone |
+| Pattern                | Source      | Description                         |
+| ---------------------- | ----------- | ----------------------------------- |
+| SKILL.md               | Claude Code | Skills loaded only when relevant    |
+| Delayed MCP loading    | Cursor      | Tool definitions loaded on-demand   |
+| File system offloading | Manus       | Context stored in files. not memory |
+| todo.md pattern        | Multiple    | Plan kept in recent attention zone  |
 
 #### Feasibility Assessment
 
-| Aspect | Rating | Notes |
-|--------|--------|-------|
+| Aspect                | Rating     | Notes                        |
+| --------------------- | ---------- | ---------------------------- |
 | Technical feasibility | ⭐⭐⭐⭐⭐ | Straightforward to implement |
-| Immediate ROI | ⭐⭐⭐⭐⭐ | Quantifiable token savings |
-| Maintenance burden | ⭐⭐⭐ | Requires ongoing curation |
+| Immediate ROI         | ⭐⭐⭐⭐⭐ | Quantifiable token savings   |
+| Maintenance burden    | ⭐⭐⭐     | Requires ongoing curation    |
 
 ---
 
@@ -111,31 +111,32 @@ Context Utilization:
 
 Cursor's three-role system:
 
-| Role | Responsibility | Behavior |
-|------|----------------|----------|
-| Planner | Architecture & task decomposition | Explores codebase. creates plans |
-| Worker | Task execution | Picks tasks. implements. submits |
-| Judge | Progress evaluation | Reviews periodically. decides next iteration |
+| Role    | Responsibility                    | Behavior                                     |
+| ------- | --------------------------------- | -------------------------------------------- |
+| Planner | Architecture & task decomposition | Explores codebase. creates plans             |
+| Worker  | Task execution                    | Picks tasks. implements. submits             |
+| Judge   | Progress evaluation               | Reviews periodically. decides next iteration |
 
 **Carlini's emergent specialization** (C Compiler project):
+
 - No explicit role assignment
 - 16 agents self-organized into: core compiler. deduplication. performance optimization. documentation
 - **Key insight**: Specialization emerged naturally from task characteristics
 
 #### Anthropic's Dual-Agent Pattern
 
-| Agent | When Active | Key Output |
-|-------|-------------|------------|
-| Initializer | First session only | init.sh. progress.txt. feature_list.json |
-| Coding | All subsequent sessions | Incremental progress. git commits |
+| Agent       | When Active             | Key Output                               |
+| ----------- | ----------------------- | ---------------------------------------- |
+| Initializer | First session only      | init.sh. progress.txt. feature_list.json |
+| Coding      | All subsequent sessions | Incremental progress. git commits        |
 
 #### Feasibility Assessment
 
-| Aspect | Rating | Notes |
-|--------|--------|-------|
-| Implementation complexity | ⭐⭐⭐ | Requires careful orchestration |
-| Scalability | ⭐⭐⭐⭐ | Linear scaling with agent count |
-| Coordination overhead | ⭐⭐ | Risk of conflicts and duplication |
+| Aspect                    | Rating   | Notes                             |
+| ------------------------- | -------- | --------------------------------- |
+| Implementation complexity | ⭐⭐⭐   | Requires careful orchestration    |
+| Scalability               | ⭐⭐⭐⭐ | Linear scaling with agent count   |
+| Coordination overhead     | ⭐⭐     | Risk of conflicts and duplication |
 
 ---
 
@@ -169,11 +170,11 @@ Session N (Coding Agent):
 
 #### Feasibility Assessment
 
-| Aspect | Rating | Notes |
-|--------|--------|-------|
-| Implementation simplicity | ⭐⭐⭐⭐ | File-based. no special infrastructure |
-| Cross-session reliability | ⭐⭐⭐⭐ | Proven in production |
-| Context efficiency | ⭐⭐⭐⭐⭐ | Massive token savings |
+| Aspect                    | Rating     | Notes                                 |
+| ------------------------- | ---------- | ------------------------------------- |
+| Implementation simplicity | ⭐⭐⭐⭐   | File-based. no special infrastructure |
+| Cross-session reliability | ⭐⭐⭐⭐   | Proven in production                  |
+| Context efficiency        | ⭐⭐⭐⭐⭐ | Massive token savings                 |
 
 ---
 
@@ -202,21 +203,21 @@ Understand → Plan → Execute → Verify
 
 **Solution**: Puppeteer MCP for E2E testing
 
-| Test Type | What It Catches | Miss Rate |
-|-----------|-----------------|-----------|
-| Unit tests | Logic errors | High for UI issues |
-| curl/API tests | Backend correctness | High for UX issues |
-| Browser automation | Full user flow | Low (most complete) |
+| Test Type          | What It Catches     | Miss Rate           |
+| ------------------ | ------------------- | ------------------- |
+| Unit tests         | Logic errors        | High for UI issues  |
+| curl/API tests     | Backend correctness | High for UX issues  |
+| Browser automation | Full user flow      | Low (most complete) |
 
 **Limitation**: Cannot detect browser native alerts (Puppeteer limitation)
 
 #### Feasibility Assessment
 
-| Aspect | Rating | Notes |
-|--------|--------|-------|
-| Implementation effort | ⭐⭐⭐ | Requires test infrastructure |
-| Quality improvement | ⭐⭐⭐⭐⭐ | Dramatic reduction in false completions |
-| Maintenance cost | ⭐⭐⭐ | Tests need updates as features change |
+| Aspect                | Rating     | Notes                                   |
+| --------------------- | ---------- | --------------------------------------- |
+| Implementation effort | ⭐⭐⭐     | Requires test infrastructure            |
+| Quality improvement   | ⭐⭐⭐⭐⭐ | Dramatic reduction in false completions |
+| Maintenance cost      | ⭐⭐⭐     | Tests need updates as features change   |
 
 ---
 
@@ -241,11 +242,13 @@ Types → Config → Repo → Service → Runtime → UI
 #### Linter Error Messages as Fix Instructions
 
 Traditional linter:
+
 ```
 ERROR: File exceeds 300 lines
 ```
 
 OpenAI's linter:
+
 ```
 ERROR: File exceeds 300 lines limit.
 FIX: Split into smaller modules. Move helper functions to utils/.
@@ -261,11 +264,11 @@ FIX: Split into smaller modules. Move helper functions to utils/.
 
 #### Feasibility Assessment
 
-| Aspect | Rating | Notes |
-|--------|--------|-------|
-| Implementation effort | ⭐⭐⭐⭐ | Leverage existing linter infrastructure |
-| Effectiveness | ⭐⭐⭐⭐⭐ | Prevents entire classes of errors |
-| Flexibility | ⭐⭐ | Rigid; requires architecture buy-in |
+| Aspect                | Rating     | Notes                                   |
+| --------------------- | ---------- | --------------------------------------- |
+| Implementation effort | ⭐⭐⭐⭐   | Leverage existing linter infrastructure |
+| Effectiveness         | ⭐⭐⭐⭐⭐ | Prevents entire classes of errors       |
+| Flexibility           | ⭐⭐       | Rigid; requires architecture buy-in     |
 
 ---
 
@@ -276,11 +279,13 @@ FIX: Split into smaller modules. Move helper functions to utils/.
 #### Core Innovation: Continuous Small-Increment Cleanup
 
 **Traditional approach**:
+
 ```
 Technical debt accumulates → Painful big refactor
 ```
 
 **Harness approach**:
+
 ```
 GC agent runs continuously → Small incremental cleanup
 ```
@@ -293,19 +298,19 @@ GC agent runs continuously → Small incremental cleanup
 
 #### Codifying "Golden Principles"
 
-| Subjective Rule | Mechanized Translation |
-|-----------------|------------------------|
-| "Code should be simple" | Single function ≤ 30 lines |
-| "Don't reinvent the wheel" | Prefer existing tools in shared/utils/ |
-| "Meaningful names" | Function names start with verb. variables are noun phrases |
-| "Proper error handling" | All errors through ErrorProvider |
+| Subjective Rule            | Mechanized Translation                                     |
+| -------------------------- | ---------------------------------------------------------- |
+| "Code should be simple"    | Single function ≤ 30 lines                                 |
+| "Don't reinvent the wheel" | Prefer existing tools in shared/utils/                     |
+| "Meaningful names"         | Function names start with verb. variables are noun phrases |
+| "Proper error handling"    | All errors through ErrorProvider                           |
 
 #### Feasibility Assessment
 
-| Aspect | Rating | Notes |
-|--------|--------|-------|
-| Automation potential | ⭐⭐⭐⭐ | Can leverage existing agents |
-| Risk of over-cleanup | ⭐⭐⭐ | May remove useful but non-standard patterns |
+| Aspect                    | Rating   | Notes                                           |
+| ------------------------- | -------- | ----------------------------------------------- |
+| Automation potential      | ⭐⭐⭐⭐ | Can leverage existing agents                    |
+| Risk of over-cleanup      | ⭐⭐⭐   | May remove useful but non-standard patterns     |
 | Long-term maintainability | ⭐⭐⭐⭐ | Proven effective in OpenAI's 5-month experiment |
 
 ---
@@ -318,10 +323,10 @@ GC agent runs continuously → Small incremental cleanup
 
 **Cursor's failed attempts**:
 
-| Approach | Problem |
-|----------|---------|
-| Flat coordination with locks | Deadlocks. forgotten locks. cascading failures |
-| Optimistic concurrency control | "Risk aversion" - agents avoid hard tasks |
+| Approach                       | Problem                                        |
+| ------------------------------ | ---------------------------------------------- |
+| Flat coordination with locks   | Deadlocks. forgotten locks. cascading failures |
+| Optimistic concurrency control | "Risk aversion" - agents avoid hard tasks      |
 
 **Successful approach**: Planner-Worker-Judge hierarchy
 
@@ -350,11 +355,11 @@ Planner (explores. plans. delegates)
 
 #### Feasibility Assessment
 
-| Aspect | Rating | Notes |
-|--------|--------|-------|
-| Scalability | ⭐⭐⭐⭐ | Proven with 16+ agents |
-| Conflict resolution | ⭐⭐⭐ | Requires git expertise from agents |
-| Task distribution | ⭐⭐⭐⭐ | Emergent specialization works surprisingly well |
+| Aspect              | Rating   | Notes                                           |
+| ------------------- | -------- | ----------------------------------------------- |
+| Scalability         | ⭐⭐⭐⭐ | Proven with 16+ agents                          |
+| Conflict resolution | ⭐⭐⭐   | Requires git expertise from agents              |
+| Task distribution   | ⭐⭐⭐⭐ | Emergent specialization works surprisingly well |
 
 ---
 
@@ -370,10 +375,10 @@ while :; do cat PROMPT.md | claude-code; done
 
 **Deceptively simple**. but the key is **backpressure**:
 
-| Type | Mechanism | Effect |
-|------|-----------|--------|
-| Upstream backpressure | Deterministic settings. consistent context. existing patterns | Guides model toward preferred implementations |
-| Downstream backpressure | Tests. type checks. lint. build. security scanners | Rejects invalid work |
+| Type                    | Mechanism                                                     | Effect                                        |
+| ----------------------- | ------------------------------------------------------------- | --------------------------------------------- |
+| Upstream backpressure   | Deterministic settings. consistent context. existing patterns | Guides model toward preferred implementations |
+| Downstream backpressure | Tests. type checks. lint. build. security scanners            | Rejects invalid work                          |
 
 #### Huntley's Production Setup
 
@@ -385,11 +390,11 @@ while :; do cat PROMPT.md | claude-code; done
 
 #### Feasibility Assessment
 
-| Aspect | Rating | Notes |
-|--------|--------|-------|
-| Risk tolerance required | ⭐ | Not for risk-averse organizations |
-| Automation level | ⭐⭐⭐⭐⭐ | Maximum autonomy |
-| Error recovery speed | ⭐⭐⭐⭐⭐ | Self-healing in real-time |
+| Aspect                  | Rating     | Notes                             |
+| ----------------------- | ---------- | --------------------------------- |
+| Risk tolerance required | ⭐         | Not for risk-averse organizations |
+| Automation level        | ⭐⭐⭐⭐⭐ | Maximum autonomy                  |
+| Error recovery speed    | ⭐⭐⭐⭐⭐ | Self-healing in real-time         |
 
 ---
 
@@ -401,22 +406,22 @@ while :; do cat PROMPT.md | claude-code; done
 
 **Manus's journey**: 5 rewrites in 6 months. each time **simplifying**
 
-| Iteration | Change |
-|-----------|--------|
-| v1 → v2 | Replaced complex tool definitions with shell execution |
-| v2 → v3 | Replaced "manager agent" with simple handoff |
-| v3 → v4 | Reduced tool count by 80% |
-| v4 → v5 | Adopted "agent-as-tool" pattern |
+| Iteration | Change                                                 |
+| --------- | ------------------------------------------------------ |
+| v1 → v2   | Replaced complex tool definitions with shell execution |
+| v2 → v3   | Replaced "manager agent" with simple handoff           |
+| v3 → v4   | Reduced tool count by 80%                              |
+| v4 → v5   | Adopted "agent-as-tool" pattern                        |
 
 **Vercel's case study**:
 
-| Metric | Before | After | Change |
-|--------|--------|-------|--------|
-| Tools | Many | 20% of original | -80% |
-| Tokens | 145.463 | 67.483 | -54% |
-| Steps | 100 | 19 | -81% |
-| Latency | 724s | 141s | -81% |
-| Outcome | Failed | Succeeded | ✓ |
+| Metric  | Before  | After           | Change |
+| ------- | ------- | --------------- | ------ |
+| Tools   | Many    | 20% of original | -80%   |
+| Tokens  | 145.463 | 67.483          | -54%   |
+| Steps   | 100     | 19              | -81%   |
+| Latency | 724s    | 141s            | -81%   |
+| Outcome | Failed  | Succeeded       | ✓      |
 
 #### Anthropic's Philosophy
 
@@ -426,11 +431,11 @@ while :; do cat PROMPT.md | claude-code; done
 
 #### Feasibility Assessment
 
-| Aspect | Rating | Notes |
-|--------|--------|-------|
-| Discipline required | ⭐⭐⭐⭐ | Temptation to add. not remove |
-| Long-term maintainability | ⭐⭐⭐⭐⭐ | Simpler = more robust |
-| Model dependency | ⭐⭐⭐ | Assumes model improvement trajectory |
+| Aspect                    | Rating     | Notes                                |
+| ------------------------- | ---------- | ------------------------------------ |
+| Discipline required       | ⭐⭐⭐⭐   | Temptation to add. not remove        |
+| Long-term maintainability | ⭐⭐⭐⭐⭐ | Simpler = more robust                |
+| Model dependency          | ⭐⭐⭐     | Assumes model improvement trajectory |
 
 ---
 
@@ -440,11 +445,11 @@ while :; do cat PROMPT.md | claude-code; done
 
 **Evidence from multiple sources**:
 
-| Experiment | Change | Result |
-|------------|--------|--------|
-| Can.ac | Tool format only | Grok Code Fast 1: 6.7% → 68.3% |
-| LangChain | Harness improvements | Terminal Bench: #30 → #5 |
-| Claude Opus 4.5 | Different harness | CORE-Bench: 42% → 78% |
+| Experiment      | Change               | Result                         |
+| --------------- | -------------------- | ------------------------------ |
+| Can.ac          | Tool format only     | Grok Code Fast 1: 6.7% → 68.3% |
+| LangChain       | Harness improvements | Terminal Bench: #30 → #5       |
+| Claude Opus 4.5 | Different harness    | CORE-Bench: 42% → 78%          |
 
 **Consensus**: 6+ independent sources agree. no dissenting opinions.
 
@@ -510,18 +515,18 @@ Research → Plan → Implement → Verify
 
 ## Feasibility Summary Matrix
 
-| Innovation | Technical Feasibility | Implementation Effort | ROI | Risk |
-|------------|----------------------|----------------------|-----|------|
-| Progressive disclosure | ⭐⭐⭐⭐⭐ | Low | Very High | Low |
-| State machine enforcement | ⭐⭐⭐⭐⭐ | Low | High | Low |
-| Context budget monitoring | ⭐⭐⭐⭐ | Medium | High | Low |
-| Agent specialization | ⭐⭐⭐⭐ | Medium | High | Medium |
-| Persistent memory (files) | ⭐⭐⭐⭐⭐ | Low | High | Low |
-| Browser automation testing | ⭐⭐⭐ | Medium | Medium | Low |
-| Multi-agent coordination | ⭐⭐⭐ | High | Very High | High |
-| GC/entropy management | ⭐⭐⭐⭐ | Medium | Medium | Medium |
-| Backpressure loops | ⭐⭐⭐ | Medium | High | High |
-| Subtraction principle | ⭐⭐⭐⭐⭐ | N/A (discipline) | Very High | Low |
+| Innovation                 | Technical Feasibility | Implementation Effort | ROI       | Risk   |
+| -------------------------- | --------------------- | --------------------- | --------- | ------ |
+| Progressive disclosure     | ⭐⭐⭐⭐⭐            | Low                   | Very High | Low    |
+| State machine enforcement  | ⭐⭐⭐⭐⭐            | Low                   | High      | Low    |
+| Context budget monitoring  | ⭐⭐⭐⭐              | Medium                | High      | Low    |
+| Agent specialization       | ⭐⭐⭐⭐              | Medium                | High      | Medium |
+| Persistent memory (files)  | ⭐⭐⭐⭐⭐            | Low                   | High      | Low    |
+| Browser automation testing | ⭐⭐⭐                | Medium                | Medium    | Low    |
+| Multi-agent coordination   | ⭐⭐⭐                | High                  | Very High | High   |
+| GC/entropy management      | ⭐⭐⭐⭐              | Medium                | Medium    | Medium |
+| Backpressure loops         | ⭐⭐⭐                | Medium                | High      | High   |
+| Subtraction principle      | ⭐⭐⭐⭐⭐            | N/A (discipline)      | Very High | Low    |
 
 ---
 

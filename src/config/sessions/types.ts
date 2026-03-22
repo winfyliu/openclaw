@@ -65,7 +65,12 @@ export type SessionTaskRuntimeEntry = {
     | "cancelled";
   progress?: number;
   lastMessage?: string;
-  blockedReason?: "credentials" | "permission" | "missing_input" | "external_dependency" | "unknown";
+  blockedReason?:
+    | "credentials"
+    | "permission"
+    | "missing_input"
+    | "external_dependency"
+    | "unknown";
   blockedRequest?: string;
   blockedAt?: number;
   lastVersion: number;

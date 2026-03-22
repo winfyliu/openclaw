@@ -11,9 +11,9 @@ import {
 } from "./thread-bindings.js";
 
 const hoisted = vi.hoisted(() => ({
-  sendMessageFeishuMock: vi.fn<(params: unknown) => Promise<{ messageId: string }>>(
-    async () => ({ messageId: "m-1" }),
-  ),
+  sendMessageFeishuMock: vi.fn<(params: unknown) => Promise<{ messageId: string }>>(async () => ({
+    messageId: "m-1",
+  })),
 }));
 
 vi.mock("./send.js", () => ({
@@ -108,7 +108,7 @@ describe("feishu subagent hook handlers", () => {
 
     expect(hoisted.sendMessageFeishuMock).toHaveBeenCalled();
     const sentTexts = (hoisted.sendMessageFeishuMock.mock.calls as unknown[][])
-      .map((call) => ((call[0] as { text?: string } | undefined)?.text ?? ""))
+      .map((call) => (call[0] as { text?: string } | undefined)?.text ?? "")
       .join("\n");
     expect(sentTexts).toContain("Current status:");
     expect(sentTexts).toContain("Completed:");

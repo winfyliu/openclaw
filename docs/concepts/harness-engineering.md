@@ -25,10 +25,10 @@ Harness Engineering is the engineering practice of designing constraints, guardr
 
 Quantitative evidence from multiple teams:
 
-| Experiment | Change | Result |
-|------------|--------|--------|
-| Can.ac | Only changed tool format (edit interface) | Grok Code Fast 1: 6.7% → 68.3% on coding benchmarks |
-| LangChain | Harness improvements only | Terminal Bench 2.0: #30 → #5, +13.7 points |
+| Experiment | Change                                    | Result                                              |
+| ---------- | ----------------------------------------- | --------------------------------------------------- |
+| Can.ac     | Only changed tool format (edit interface) | Grok Code Fast 1: 6.7% → 68.3% on coding benchmarks |
+| LangChain  | Harness improvements only                 | Terminal Bench 2.0: #30 → #5, +13.7 points          |
 
 **Conclusion**: Before debating model selection, examine your Harness design for higher ROI.
 
@@ -36,21 +36,21 @@ Quantitative evidence from multiple teams:
 
 Anthropic identified four common failure patterns:
 
-| Failure Mode | Description | Countermeasure |
-|--------------|-------------|----------------|
-| One-shotting | Agent tries to do everything at once, exhausts context window | Dual-agent architecture + incremental progress |
-| Premature victory | Agent declares task complete when only partial work is done | Feature list + forced verification |
-| Premature completion marking | Agent marks features done without E2E testing | Forced E2E testing |
-| Environment startup friction | Each new session wastes tokens figuring out how to run the app | init.sh scripts + progress files |
+| Failure Mode                 | Description                                                    | Countermeasure                                 |
+| ---------------------------- | -------------------------------------------------------------- | ---------------------------------------------- |
+| One-shotting                 | Agent tries to do everything at once, exhausts context window  | Dual-agent architecture + incremental progress |
+| Premature victory            | Agent declares task complete when only partial work is done    | Feature list + forced verification             |
+| Premature completion marking | Agent marks features done without E2E testing                  | Forced E2E testing                             |
+| Environment startup friction | Each new session wastes tokens figuring out how to run the app | init.sh scripts + progress files               |
 
 ### The Smart Zone vs Dumb Zone
 
 Dex Horthy's empirical observation: context quality degrades past ~40% utilization.
 
-| Zone | Utilization | Characteristics |
-|------|-------------|-----------------|
-| Smart Zone | 0-40% | Focused, accurate reasoning |
-| Dumb Zone | >40% | Hallucinations, loops, malformed tool calls, low-quality code |
+| Zone       | Utilization | Characteristics                                               |
+| ---------- | ----------- | ------------------------------------------------------------- |
+| Smart Zone | 0-40%       | Focused, accurate reasoning                                   |
+| Dumb Zone  | >40%        | Hallucinations, loops, malformed tool calls, low-quality code |
 
 **Key insight**: More context ≠ better results. Overloading context makes agents dumber.
 
@@ -62,11 +62,11 @@ Dex Horthy's empirical observation: context quality degrades past ~40% utilizati
 
 #### Three-Tier Context System
 
-| Tier | Loading Trigger | Content | Context Cost |
-|------|-----------------|---------|--------------|
-| Tier 1: Session-resident | Auto-loaded every session | AGENTS.md, project structure overview | Minimal |
-| Tier 2: On-demand | When specific subagent/skill is invoked | Specialized agent context, domain knowledge | Medium |
-| Tier 3: Persistent knowledge | When agent actively queries | Research docs, specs, historical sessions | As needed |
+| Tier                         | Loading Trigger                         | Content                                     | Context Cost |
+| ---------------------------- | --------------------------------------- | ------------------------------------------- | ------------ |
+| Tier 1: Session-resident     | Auto-loaded every session               | AGENTS.md, project structure overview       | Minimal      |
+| Tier 2: On-demand            | When specific subagent/skill is invoked | Specialized agent context, domain knowledge | Medium       |
+| Tier 3: Persistent knowledge | When agent actively queries             | Research docs, specs, historical sessions   | As needed    |
 
 #### Progressive Disclosure Pattern
 
@@ -95,15 +95,15 @@ AGENTS.md is a directory, not a manual. Specific knowledge is distributed in str
 
 #### Role-Based Capability Matrix
 
-| Agent Role | Responsibility | Tool Permissions |
-|------------|----------------|------------------|
-| Orchestrator | Planning and aggregation | Full access |
-| Researcher | Explore codebase, analyze implementation | Read-only (Read, Grep, Glob) |
-| Planner | Decompose requirements into structured tasks | Read-only, no write permission |
-| Executor | Implement specific tasks | Scoped read/write |
-| Reviewer | Audit completed work, flag issues | Read-only + marking permission |
-| Debugger | Fix issues found in review | Scoped fix permission |
-| Cleaner | Combat entropy, clean low-quality code | Read/write |
+| Agent Role   | Responsibility                               | Tool Permissions               |
+| ------------ | -------------------------------------------- | ------------------------------ |
+| Orchestrator | Planning and aggregation                     | Full access                    |
+| Researcher   | Explore codebase, analyze implementation     | Read-only (Read, Grep, Glob)   |
+| Planner      | Decompose requirements into structured tasks | Read-only, no write permission |
+| Executor     | Implement specific tasks                     | Scoped read/write              |
+| Reviewer     | Audit completed work, flag issues            | Read-only + marking permission |
+| Debugger     | Fix issues found in review                   | Scoped fix permission          |
+| Cleaner      | Combat entropy, clean low-quality code       | Read/write                     |
 
 **Why specialization matters**: Each expert carries less irrelevant information, staying in the "Smart Zone."
 
@@ -116,12 +116,14 @@ Each new agent session starts from zero, rebuilding context through filesystem a
 #### Anthropic's Dual-Agent Pattern
 
 **Initializer Agent** (first session):
+
 - Creates init.sh script
 - Creates claude-progress.txt work log
 - Creates initial git commit
 - Generates feature list (200+ items, all marked "failing")
 
 **Coding Agent** (subsequent sessions):
+
 1. Run `pwd` to see working directory
 2. Read git log and progress file
 3. Read feature list, select highest-priority incomplete feature
@@ -187,11 +189,11 @@ The agent sees the error and immediately knows how to fix it—error messages ar
 
 ### Three-Pronged Checking System
 
-| Check Type | Use Case | Examples |
-|------------|----------|----------|
-| Deterministic Linter | Clear rules | Import direction, naming conventions |
-| Structural Tests | Runtime behavior | Dependency graph cycle detection |
-| LLM-based Agent | Semantic understanding | "Is this class's responsibility crossing boundaries?" |
+| Check Type           | Use Case               | Examples                                              |
+| -------------------- | ---------------------- | ----------------------------------------------------- |
+| Deterministic Linter | Clear rules            | Import direction, naming conventions                  |
+| Structural Tests     | Runtime behavior       | Dependency graph cycle detection                      |
+| LLM-based Agent      | Semantic understanding | "Is this class's responsibility crossing boundaries?" |
 
 ## Entropy Management (Garbage Collection)
 
@@ -214,12 +216,12 @@ Harness approach: GC agent runs continuously → small incremental cleanup
 
 Translate subjective rules into mechanically enforceable constraints:
 
-| Subjective Rule | Mechanized Translation |
-|-----------------|------------------------|
-| "Code should be simple" | Single function ≤ 30 lines |
-| "Don't reinvent the wheel" | Prefer existing tools in shared/utils/ |
-| "Meaningful names" | Function names must start with verb, variables must be noun phrases |
-| "Proper error handling" | All errors must go through ErrorProvider |
+| Subjective Rule            | Mechanized Translation                                              |
+| -------------------------- | ------------------------------------------------------------------- |
+| "Code should be simple"    | Single function ≤ 30 lines                                          |
+| "Don't reinvent the wheel" | Prefer existing tools in shared/utils/                              |
+| "Meaningful names"         | Function names must start with verb, variables must be noun phrases |
+| "Proper error handling"    | All errors must go through ErrorProvider                            |
 
 ## Agent Legibility
 
@@ -229,11 +231,11 @@ When code throughput increases, the bottleneck shifts from "writing code" to "ve
 
 #### Three Observability Channels
 
-| Channel | Implementation | What Agents Can Do |
-|---------|----------------|-------------------|
-| UI | Chrome DevTools Protocol | Capture DOM snapshots, screenshots, simulate clicks |
-| Logs | LogQL query interface | Query error logs, trace request chains |
-| Metrics | PromQL query interface | Query latency, throughput, error rates |
+| Channel | Implementation           | What Agents Can Do                                  |
+| ------- | ------------------------ | --------------------------------------------------- |
+| UI      | Chrome DevTools Protocol | Capture DOM snapshots, screenshots, simulate clicks |
+| Logs    | LogQL query interface    | Query error logs, trace request chains              |
+| Metrics | PromQL query interface   | Query latency, throughput, error rates              |
 
 **Example**: "Ensure service starts within 800ms" becomes measurable. Agent can start service, query startup metrics, identify bottlenecks, optimize code, and verify—all without human intervention.
 
@@ -248,13 +250,13 @@ Agents should verify their own outputs:
 
 ## Maturity Model
 
-| Level | Characteristics | Engineer Role |
-|-------|-----------------|---------------|
-| Level 0 | No Harness, direct prompts | Manual coding + occasional AI |
-| Level 1 | AGENTS.md + basic Linter + manual testing | Mostly coding, AI assistance |
-| Level 2 | CI/CD integration + automated testing + progress tracking | Planning + review, some AI coding |
-| Level 3 | Multi-agent roles + layered context + persistent memory | Environment design + management |
-| Level 4 | Unattended parallelization + automated entropy management + self-healing | Architect + quality gatekeeper |
+| Level   | Characteristics                                                          | Engineer Role                     |
+| ------- | ------------------------------------------------------------------------ | --------------------------------- |
+| Level 0 | No Harness, direct prompts                                               | Manual coding + occasional AI     |
+| Level 1 | AGENTS.md + basic Linter + manual testing                                | Mostly coding, AI assistance      |
+| Level 2 | CI/CD integration + automated testing + progress tracking                | Planning + review, some AI coding |
+| Level 3 | Multi-agent roles + layered context + persistent memory                  | Environment design + management   |
+| Level 4 | Unattended parallelization + automated entropy management + self-healing | Architect + quality gatekeeper    |
 
 ## OpenClaw Implementation Guide
 
@@ -262,13 +264,13 @@ Agents should verify their own outputs:
 
 OpenClaw's task-orchestrator infrastructure already implements several Harness Engineering principles:
 
-| Concept | OpenClaw Implementation |
-|---------|------------------------|
-| Context Engineering | task-registry.ts manages taskId/runId/session mapping |
-| Architectural Constraints | task-events.ts state machine enforces transitions |
-| Entropy Management | Task persistence to session store |
-| Progress Transparency | buildTaskProgressPanel() progress panel |
-| Recovery Mechanism | task-resume.ts credential resume routing |
+| Concept                   | OpenClaw Implementation                               |
+| ------------------------- | ----------------------------------------------------- |
+| Context Engineering       | task-registry.ts manages taskId/runId/session mapping |
+| Architectural Constraints | task-events.ts state machine enforces transitions     |
+| Entropy Management        | Task persistence to session store                     |
+| Progress Transparency     | buildTaskProgressPanel() progress panel               |
+| Recovery Mechanism        | task-resume.ts credential resume routing              |
 
 ### Recommended Enhancements
 
@@ -278,22 +280,22 @@ OpenClaw's task-orchestrator infrastructure already implements several Harness E
 // src/agents/context-budget.ts
 export type ContextBudget = {
   maxTokens: number;
-  smartZoneThreshold: number;  // ~40%
+  smartZoneThreshold: number; // ~40%
 };
 
 export function enforceContextBudget(
   context: { tokens: number },
-  budget: ContextBudget = { maxTokens: 128_000, smartZoneThreshold: 0.4 }
+  budget: ContextBudget = { maxTokens: 128_000, smartZoneThreshold: 0.4 },
 ): { withinSmartZone: boolean; warning?: string } {
   const utilization = context.tokens / budget.maxTokens;
-  
+
   if (utilization > budget.smartZoneThreshold) {
     return {
       withinSmartZone: false,
       warning: `Exiting Smart Zone: ${(utilization * 100).toFixed(1)}% utilized`,
     };
   }
-  
+
   return { withinSmartZone: true };
 }
 ```
@@ -314,14 +316,17 @@ const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   cancelled: [],
 };
 
-export function validateTransition(from: TaskStatus, to: TaskStatus): {
+export function validateTransition(
+  from: TaskStatus,
+  to: TaskStatus,
+): {
   valid: boolean;
   fixInstruction?: string;
 } {
   if (VALID_TRANSITIONS[from]?.includes(to)) {
     return { valid: true };
   }
-  
+
   return {
     valid: false,
     fixInstruction: [
@@ -344,22 +349,24 @@ export type GcPolicy = {
 
 export function collectGarbageTasks(
   sessionKey: string,
-  policy: GcPolicy = { maxTaskAgeDays: 7, maxStaleBlockedHours: 48, maxTasksPerSession: 40 }
+  policy: GcPolicy = { maxTaskAgeDays: 7, maxStaleBlockedHours: 48, maxTasksPerSession: 40 },
 ): { toDelete: TaskRecord[]; toFlag: TaskRecord[] } {
   const tasks = listTasksForSession(sessionKey);
   const now = Date.now();
-  
-  const toDelete = tasks.filter(t => 
-    isTerminalTaskStatus(t.status) && 
-    (now - t.createdAt) / (1000 * 60 * 60 * 24) > policy.maxTaskAgeDays
+
+  const toDelete = tasks.filter(
+    (t) =>
+      isTerminalTaskStatus(t.status) &&
+      (now - t.createdAt) / (1000 * 60 * 60 * 24) > policy.maxTaskAgeDays,
   );
-  
-  const toFlag = tasks.filter(t =>
-    t.status === "blocked" &&
-    t.blockedAt &&
-    (now - t.blockedAt) / (1000 * 60 * 60) > policy.maxStaleBlockedHours
+
+  const toFlag = tasks.filter(
+    (t) =>
+      t.status === "blocked" &&
+      t.blockedAt &&
+      (now - t.blockedAt) / (1000 * 60 * 60) > policy.maxStaleBlockedHours,
   );
-  
+
   return { toDelete, toFlag };
 }
 ```
@@ -368,16 +375,53 @@ export function collectGarbageTasks(
 
 ```typescript
 // src/agents/specialized-roles.ts
-export type SpecializedRole = "orchestrator" | "researcher" | "planner" | "executor" | "reviewer" | "debugger" | "cleaner";
+export type SpecializedRole =
+  | "orchestrator"
+  | "researcher"
+  | "planner"
+  | "executor"
+  | "reviewer"
+  | "debugger"
+  | "cleaner";
 
 export const ROLE_CAPABILITIES: Record<SpecializedRole, RoleCapabilities> = {
   orchestrator: { canRead: true, canWrite: true, canSpawn: true, allowedTools: ["*"] },
-  researcher: { canRead: true, canWrite: false, canSpawn: false, allowedTools: ["Read", "Grep", "Glob"] },
-  planner: { canRead: true, canWrite: false, canSpawn: false, allowedTools: ["Read", "Write", "TaskCreate"] },
-  executor: { canRead: true, canWrite: true, canSpawn: true, allowedTools: ["Read", "Write", "Edit", "Bash"] },
-  reviewer: { canRead: true, canWrite: false, canSpawn: false, allowedTools: ["Read", "Grep", "Test"] },
-  debugger: { canRead: true, canWrite: true, canSpawn: false, allowedTools: ["Read", "Edit", "Bash"] },
-  cleaner: { canRead: true, canWrite: true, canSpawn: false, allowedTools: ["Read", "Write", "Edit", "Delete"] },
+  researcher: {
+    canRead: true,
+    canWrite: false,
+    canSpawn: false,
+    allowedTools: ["Read", "Grep", "Glob"],
+  },
+  planner: {
+    canRead: true,
+    canWrite: false,
+    canSpawn: false,
+    allowedTools: ["Read", "Write", "TaskCreate"],
+  },
+  executor: {
+    canRead: true,
+    canWrite: true,
+    canSpawn: true,
+    allowedTools: ["Read", "Write", "Edit", "Bash"],
+  },
+  reviewer: {
+    canRead: true,
+    canWrite: false,
+    canSpawn: false,
+    allowedTools: ["Read", "Grep", "Test"],
+  },
+  debugger: {
+    canRead: true,
+    canWrite: true,
+    canSpawn: false,
+    allowedTools: ["Read", "Edit", "Bash"],
+  },
+  cleaner: {
+    canRead: true,
+    canWrite: true,
+    canSpawn: false,
+    allowedTools: ["Read", "Write", "Edit", "Delete"],
+  },
 };
 ```
 
@@ -396,17 +440,17 @@ export const ROLE_CAPABILITIES: Record<SpecializedRole, RoleCapabilities> = {
 
 ### Key Component Checklist
 
-| Component | Purpose | Priority |
-|-----------|---------|----------|
-| AGENTS.md / CLAUDE.md | Session-resident context, dynamic feedback loop | P0 |
-| Custom Linter + structural tests | Mechanized architecture constraint enforcement | P0 |
-| CI/CD pipeline | Automated testing and verification feedback | P0 |
-| Progress file (progress.txt / JSON) | Cross-session persistent memory | P1 |
-| Feature list file (feature_list.json) | Structured completion criteria | P1 |
-| Browser automation (Puppeteer MCP) | E2E test verification | P1 |
-| Observability integration | Agent-queryable logs/metrics | P2 |
-| Entropy management agent | Periodic cleanup of low-quality code | P2 |
-| Specialized sub-agents | Division of labor, reduced context pollution | P2 |
+| Component                             | Purpose                                         | Priority |
+| ------------------------------------- | ----------------------------------------------- | -------- |
+| AGENTS.md / CLAUDE.md                 | Session-resident context, dynamic feedback loop | P0       |
+| Custom Linter + structural tests      | Mechanized architecture constraint enforcement  | P0       |
+| CI/CD pipeline                        | Automated testing and verification feedback     | P0       |
+| Progress file (progress.txt / JSON)   | Cross-session persistent memory                 | P1       |
+| Feature list file (feature_list.json) | Structured completion criteria                  | P1       |
+| Browser automation (Puppeteer MCP)    | E2E test verification                           | P1       |
+| Observability integration             | Agent-queryable logs/metrics                    | P2       |
+| Entropy management agent              | Periodic cleanup of low-quality code            | P2       |
+| Specialized sub-agents                | Division of labor, reduced context pollution    | P2       |
 
 ## Open Questions
 

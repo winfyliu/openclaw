@@ -42,12 +42,32 @@ export type TaskBlockedUserInputEvent = {
 
 export type TaskEvent = TaskProgressEvent | TaskBlockedUserInputEvent;
 
+const TASK_TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
+  accepted: ["planning", "blocked", "cancelled"],
+  planning: ["executing", "blocked", "cancelled"],
+  executing: ["evaluating", "blocked", "failed", "timeout", "cancelled"],
+  evaluating: ["completed", "failed", "blocked", "cancelled"],
+  blocked: ["planning", "executing", "blocked", "cancelled"],
+  completed: [],
+  failed: [],
+  timeout: [],
+  cancelled: [],
+};
+
+export function canTransitionTaskStatus(from: TaskStatus, to: TaskStatus): boolean {
+  if (from === to) {
+    return true;
+  }
+  return TASK_TRANSITIONS[from].includes(to);
+}
+
+export function allowedTaskTransitions(from: TaskStatus): readonly TaskStatus[] {
+  return TASK_TRANSITIONS[from];
+}
+
 export function isTerminalTaskStatus(status: TaskStatus): boolean {
   return (
-    status === "completed" ||
-    status === "failed" ||
-    status === "timeout" ||
-    status === "cancelled"
+    status === "completed" || status === "failed" || status === "timeout" || status === "cancelled"
   );
 }
 

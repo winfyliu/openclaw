@@ -15,26 +15,26 @@ This document provides concrete implementation guidance for enhancing OpenClaw's
 
 ### What OpenClaw Already Has
 
-| Component | File | Harness Principle |
-|-----------|------|-------------------|
-| Task Events | src/agents/task-events.ts | State machine definition |
-| Task Registry | src/agents/task-registry.ts | Persistent memory |
-| Task Resume | src/agents/task-resume.ts | Recovery mechanism |
-| Task Orchestrator | src/agents/task-orchestrator.ts | Progress transparency |
-| Subagent Spawn | src/agents/subagent-spawn.ts | Agent lifecycle |
-| Subagent Announce | src/agents/subagent-announce.ts | Communication |
-| Context Engine | docs/concepts/context-engine.md | Context architecture |
+| Component         | File                            | Harness Principle        |
+| ----------------- | ------------------------------- | ------------------------ |
+| Task Events       | src/agents/task-events.ts       | State machine definition |
+| Task Registry     | src/agents/task-registry.ts     | Persistent memory        |
+| Task Resume       | src/agents/task-resume.ts       | Recovery mechanism       |
+| Task Orchestrator | src/agents/task-orchestrator.ts | Progress transparency    |
+| Subagent Spawn    | src/agents/subagent-spawn.ts    | Agent lifecycle          |
+| Subagent Announce | src/agents/subagent-announce.ts | Communication            |
+| Context Engine    | docs/concepts/context-engine.md | Context architecture     |
 
 ### Gaps to Fill
 
-| Gap | Priority | Effort |
-|-----|----------|--------|
-| State transition validation (Linter) | P0 | Low |
-| Context budget enforcement | P0 | Medium |
-| Task garbage collection | P1 | Low |
-| Agent specialization roles | P1 | Medium |
-| Self-verification hooks | P2 | Medium |
-| Observability integration | P2 | High |
+| Gap                                  | Priority | Effort |
+| ------------------------------------ | -------- | ------ |
+| State transition validation (Linter) | P0       | Low    |
+| Context budget enforcement           | P0       | Medium |
+| Task garbage collection              | P1       | Low    |
+| Agent specialization roles           | P1       | Medium |
+| Self-verification hooks              | P2       | Medium |
+| Observability integration            | P2       | High   |
 
 ---
 
@@ -85,10 +85,10 @@ export type ValidationResult = {
 export function validateStateTransition(
   current: TaskStatus,
   next: TaskStatus,
-  context?: { taskId?: string; reason?: string }
+  context?: { taskId?: string; reason?: string },
 ): ValidationResult {
-  const rule = TRANSITION_RULES.find(r => r.from === current);
-  
+  const rule = TRANSITION_RULES.find((r) => r.from === current);
+
   if (!rule) {
     return {
       valid: false,
@@ -99,7 +99,7 @@ export function validateStateTransition(
       },
     };
   }
-  
+
   if (rule.to.length === 0) {
     return {
       valid: false,
@@ -110,7 +110,7 @@ export function validateStateTransition(
       },
     };
   }
-  
+
   if (!rule.to.includes(next)) {
     return {
       valid: false,
@@ -119,19 +119,19 @@ export function validateStateTransition(
         message: `Invalid transition: ${current} → ${next}`,
         fixInstruction: [
           `Allowed transitions from '${current}':`,
-          ...rule.to.map(t => `  - ${current} → ${t}`),
+          ...rule.to.map((t) => `  - ${current} → ${t}`),
           context?.taskId ? `\nTaskId: ${context.taskId}` : "",
         ].join("\n"),
       },
     };
   }
-  
+
   return { valid: true };
 }
 
 export function buildLinterErrorMessage(result: ValidationResult): string {
   if (result.valid || !result.error) return "";
-  
+
   return [
     `TASK_LINTER_ERROR [${result.error.code}]`,
     result.error.message,
@@ -149,31 +149,29 @@ export function buildLinterErrorMessage(result: ValidationResult): string {
 
 import { validateStateTransition, buildLinterErrorMessage } from "./task-state-linter";
 
-export function updateTaskFromRunEvent(params: {
-  runId: string;
-  event: TaskProgressEvent;
-}): { updated: boolean; linterError?: string } {
+export function updateTaskFromRunEvent(params: { runId: string; event: TaskProgressEvent }): {
+  updated: boolean;
+  linterError?: string;
+} {
   const existing = findTaskByRunId(params.runId);
   if (!existing) return { updated: false };
-  
+
   // Validate transition
   if (params.event.status && params.event.status !== existing.status) {
-    const validation = validateStateTransition(
-      existing.status,
-      params.event.status,
-      { taskId: existing.taskId }
-    );
-    
+    const validation = validateStateTransition(existing.status, params.event.status, {
+      taskId: existing.taskId,
+    });
+
     if (!validation.valid) {
       const errorMsg = buildLinterErrorMessage(validation);
       console.error(errorMsg);
-      return { 
-        updated: false, 
-        linterError: errorMsg 
+      return {
+        updated: false,
+        linterError: errorMsg,
       };
     }
   }
-  
+
   // Proceed with update...
 }
 ```
@@ -204,8 +202,8 @@ export type ContextBudgetConfig = {
 
 export const DEFAULT_BUDGET: ContextBudgetConfig = {
   maxTokens: 128_000,
-  smartZoneThreshold: 0.4,    // 40% - Smart Zone boundary
-  dumbZoneThreshold: 0.7,     // 70% - Critical zone
+  smartZoneThreshold: 0.4, // 40% - Smart Zone boundary
+  dumbZoneThreshold: 0.7, // 70% - Critical zone
   warningLevels: [0.3, 0.4, 0.5, 0.6, 0.7],
 };
 
@@ -219,10 +217,10 @@ export type BudgetStatus = {
 
 export function checkContextBudget(
   tokens: number,
-  config: ContextBudgetConfig = DEFAULT_BUDGET
+  config: ContextBudgetConfig = DEFAULT_BUDGET,
 ): BudgetStatus {
   const utilization = tokens / config.maxTokens;
-  
+
   if (utilization > 1) {
     return {
       tokens,
@@ -232,7 +230,7 @@ export function checkContextBudget(
       message: `CRITICAL: Context overflow (${(utilization * 100).toFixed(1)}%). Trigger immediate compaction.`,
     };
   }
-  
+
   if (utilization > config.dumbZoneThreshold) {
     return {
       tokens,
@@ -242,7 +240,7 @@ export function checkContextBudget(
       message: `WARNING: Dumb Zone (${(utilization * 100).toFixed(1)}%). Quality degradation expected. Compact now.`,
     };
   }
-  
+
   if (utilization > config.smartZoneThreshold) {
     return {
       tokens,
@@ -252,7 +250,7 @@ export function checkContextBudget(
       message: `CAUTION: Exiting Smart Zone (${(utilization * 100).toFixed(1)}%). Consider selective compaction.`,
     };
   }
-  
+
   return {
     tokens,
     utilization,
@@ -268,16 +266,18 @@ export function buildBudgetReport(status: BudgetStatus): string {
     dumb: "🔴",
     overflow: "💥",
   }[status.zone];
-  
+
   const barLength = 20;
   const filled = Math.floor(status.utilization * barLength);
   const bar = "█".repeat(filled) + "░".repeat(barLength - filled);
-  
+
   return [
     `${zoneIcon} Context Budget: [${bar}] ${(status.utilization * 100).toFixed(1)}%`,
     `  Tokens: ${status.tokens.toLocaleString()} / ${DEFAULT_BUDGET.maxTokens.toLocaleString()}`,
     status.message ? `  ${status.message}` : null,
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 ```
 
@@ -341,17 +341,14 @@ export type GcResult = {
   report: string;
 };
 
-export function runTaskGc(
-  sessionKey: string,
-  policy: GcPolicy = DEFAULT_GC_POLICY
-): GcResult {
+export function runTaskGc(sessionKey: string, policy: GcPolicy = DEFAULT_GC_POLICY): GcResult {
   const tasks = listTasksForSession(sessionKey);
   const now = Date.now();
-  
+
   const deleted: TaskRecord[] = [];
   const flagged: TaskRecord[] = [];
   const retained: TaskRecord[] = [];
-  
+
   // Sort by priority: terminal states first, then by age
   const sortedTasks = [...tasks].sort((a, b) => {
     const aTerminal = isTerminalTaskStatus(a.status);
@@ -359,16 +356,14 @@ export function runTaskGc(
     if (aTerminal !== bTerminal) return aTerminal ? -1 : 1;
     return a.createdAt - b.createdAt;
   });
-  
+
   for (const task of sortedTasks) {
     const ageDays = (now - task.createdAt) / (1000 * 60 * 60 * 24);
-    const blockedHours = task.blockedAt 
-      ? (now - task.blockedAt) / (1000 * 60 * 60) 
-      : 0;
-    
+    const blockedHours = task.blockedAt ? (now - task.blockedAt) / (1000 * 60 * 60) : 0;
+
     let action: "delete" | "flag" | "retain" = "retain";
     let reason = "";
-    
+
     // Rule 1: Old terminal tasks
     if (isTerminalTaskStatus(task.status) && ageDays > policy.maxCompletedAgeDays) {
       action = "delete";
@@ -380,12 +375,14 @@ export function runTaskGc(
       reason = `Blocked for ${blockedHours.toFixed(1)} hours`;
     }
     // Rule 3: Over limit
-    else if (tasks.length - deleted.length > policy.maxTasksPerSession && 
-             isTerminalTaskStatus(task.status)) {
+    else if (
+      tasks.length - deleted.length > policy.maxTasksPerSession &&
+      isTerminalTaskStatus(task.status)
+    ) {
       action = "delete";
       reason = `Over limit (${tasks.length} > ${policy.maxTasksPerSession})`;
     }
-    
+
     if (action === "delete") {
       deleted.push(task);
       if (!policy.dryRun) {
@@ -406,7 +403,7 @@ export function runTaskGc(
       retained.push(task);
     }
   }
-  
+
   const report = [
     `Task GC Report for ${sessionKey}`,
     "=".repeat(40),
@@ -415,16 +412,23 @@ export function runTaskGc(
     `Flagged: ${flagged.length}`,
     `Retained: ${retained.length}`,
     "",
-    deleted.length > 0 ? [
-      "Deleted tasks:",
-      ...deleted.map(t => `  - ${t.taskId}: ${t.status} (${t.title})`),
-    ] : [],
-    flagged.length > 0 ? [
-      "Flagged tasks (need attention):",
-      ...flagged.map(t => `  - ${t.taskId}: blocked for ${((now - t.blockedAt!) / (1000 * 60 * 60)).toFixed(1)}h`),
-    ] : [],
-  ].flat().filter(Boolean).join("\n");
-  
+    deleted.length > 0
+      ? ["Deleted tasks:", ...deleted.map((t) => `  - ${t.taskId}: ${t.status} (${t.title})`)]
+      : [],
+    flagged.length > 0
+      ? [
+          "Flagged tasks (need attention):",
+          ...flagged.map(
+            (t) =>
+              `  - ${t.taskId}: blocked for ${((now - t.blockedAt!) / (1000 * 60 * 60)).toFixed(1)}h`,
+          ),
+        ]
+      : [],
+  ]
+    .flat()
+    .filter(Boolean)
+    .join("\n");
+
   return { deleted, flagged, retained, report };
 }
 
@@ -473,13 +477,13 @@ Define specialized roles with scoped permissions.
 ```typescript
 // src/agents/specialized-roles.ts
 
-export type SpecializedRole = 
-  | "orchestrator" 
-  | "researcher" 
-  | "planner" 
-  | "executor" 
-  | "reviewer" 
-  | "debugger" 
+export type SpecializedRole =
+  | "orchestrator"
+  | "researcher"
+  | "planner"
+  | "executor"
+  | "reviewer"
+  | "debugger"
   | "cleaner";
 
 export type RoleCapabilities = {
@@ -503,7 +507,7 @@ export const ROLE_DEFINITIONS: Record<SpecializedRole, RoleCapabilities> = {
     deniedTools: [],
     priority: 1,
   },
-  
+
   researcher: {
     canRead: true,
     canWrite: false,
@@ -514,7 +518,7 @@ export const ROLE_DEFINITIONS: Record<SpecializedRole, RoleCapabilities> = {
     maxContextTokens: 50_000,
     priority: 2,
   },
-  
+
   planner: {
     canRead: true,
     canWrite: false,
@@ -525,7 +529,7 @@ export const ROLE_DEFINITIONS: Record<SpecializedRole, RoleCapabilities> = {
     maxContextTokens: 30_000,
     priority: 2,
   },
-  
+
   executor: {
     canRead: true,
     canWrite: true,
@@ -536,7 +540,7 @@ export const ROLE_DEFINITIONS: Record<SpecializedRole, RoleCapabilities> = {
     maxContextTokens: 80_000,
     priority: 3,
   },
-  
+
   reviewer: {
     canRead: true,
     canWrite: false,
@@ -547,7 +551,7 @@ export const ROLE_DEFINITIONS: Record<SpecializedRole, RoleCapabilities> = {
     maxContextTokens: 40_000,
     priority: 2,
   },
-  
+
   debugger: {
     canRead: true,
     canWrite: true,
@@ -558,7 +562,7 @@ export const ROLE_DEFINITIONS: Record<SpecializedRole, RoleCapabilities> = {
     maxContextTokens: 60_000,
     priority: 3,
   },
-  
+
   cleaner: {
     canRead: true,
     canWrite: true,
@@ -577,27 +581,31 @@ export function getRoleCapabilities(role: SpecializedRole): RoleCapabilities {
 
 export function isToolAllowed(tool: string, role: SpecializedRole): boolean {
   const caps = ROLE_DEFINITIONS[role];
-  
+
   if (caps.allowedTools === "*") return true;
   if (caps.deniedTools.includes(tool)) return false;
   if (caps.allowedTools.includes(tool)) return true;
-  
+
   return false;
 }
 
 export function buildRolePrompt(role: SpecializedRole): string {
   const caps = ROLE_DEFINITIONS[role];
-  
+
   const roleDescriptions: Record<SpecializedRole, string> = {
-    orchestrator: "You are the main orchestrator. You coordinate work across specialized agents and aggregate results.",
+    orchestrator:
+      "You are the main orchestrator. You coordinate work across specialized agents and aggregate results.",
     researcher: "You are a research agent. You explore and analyze code, but cannot make changes.",
-    planner: "You are a planning agent. You decompose requirements into structured tasks, but cannot implement.",
-    executor: "You are an execution agent. You implement specific tasks according to approved plans.",
-    reviewer: "You are a review agent. You audit completed work and flag issues, but cannot make changes.",
+    planner:
+      "You are a planning agent. You decompose requirements into structured tasks, but cannot implement.",
+    executor:
+      "You are an execution agent. You implement specific tasks according to approved plans.",
+    reviewer:
+      "You are a review agent. You audit completed work and flag issues, but cannot make changes.",
     debugger: "You are a debugging agent. You fix issues found in review, with scoped permissions.",
     cleaner: "You are a cleanup agent. You remove technical debt and maintain code quality.",
   };
-  
+
   return [
     roleDescriptions[role],
     "",
@@ -606,16 +614,16 @@ export function buildRolePrompt(role: SpecializedRole): string {
     `- Write: ${caps.canWrite ? "✓" : "✗"}`,
     `- Spawn subagents: ${caps.canSpawn ? "✓" : "✗"}`,
     `- Execute commands: ${caps.canExecute ? "✓" : "✗"}`,
-    caps.allowedTools === "*" 
+    caps.allowedTools === "*"
       ? "- All tools available"
       : `- Allowed tools: ${caps.allowedTools.join(", ")}`,
-    caps.deniedTools.length > 0 
-      ? `- Denied tools: ${caps.deniedTools.join(", ")}`
-      : null,
-    caps.maxContextTokens 
+    caps.deniedTools.length > 0 ? `- Denied tools: ${caps.deniedTools.join(", ")}` : null,
+    caps.maxContextTokens
       ? `- Max context: ${caps.maxContextTokens.toLocaleString()} tokens`
       : null,
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 ```
 
@@ -633,20 +641,14 @@ export function spawnSpecializedAgent(params: {
 }): SpawnResult {
   const caps = getRoleCapabilities(params.role);
   const rolePrompt = buildRolePrompt(params.role);
-  
+
   // Inject role prompt into system prompt
-  const systemPrompt = [
-    rolePrompt,
-    "",
-    "# Task",
-    params.task,
-  ].join("\n");
-  
+  const systemPrompt = [rolePrompt, "", "# Task", params.task].join("\n");
+
   // Apply tool restrictions
-  const toolPolicy = caps.allowedTools === "*"
-    ? undefined
-    : { allow: caps.allowedTools, deny: caps.deniedTools };
-  
+  const toolPolicy =
+    caps.allowedTools === "*" ? undefined : { allow: caps.allowedTools, deny: caps.deniedTools };
+
   return spawnSubagent({
     systemPrompt,
     toolPolicy,
@@ -685,21 +687,19 @@ export type VerificationResult = {
   message: string;
 };
 
-export async function runVerification(
-  checks: VerificationCheck[]
-): Promise<VerificationResult[]> {
+export async function runVerification(checks: VerificationCheck[]): Promise<VerificationResult[]> {
   const results: VerificationResult[] = [];
-  
+
   for (const check of checks) {
     const result = await runSingleCheck(check);
     results.push(result);
-    
+
     // Fail fast on required checks
     if (!result.passed && check.required) {
       break;
     }
   }
-  
+
   return results;
 }
 
@@ -711,24 +711,20 @@ async function runSingleCheck(check: VerificationCheck): Promise<VerificationRes
       return {
         check,
         passed: exists,
-        message: exists 
-          ? `File exists: ${path}` 
-          : `File not found: ${path}`,
+        message: exists ? `File exists: ${path}` : `File not found: ${path}`,
       };
     }
-    
+
     case "test_passes": {
       const testCommand = check.params.command as string;
       const result = await runTest(testCommand);
       return {
         check,
         passed: result.success,
-        message: result.success 
-          ? "Tests passed" 
-          : `Tests failed: ${result.output?.slice(0, 200)}`,
+        message: result.success ? "Tests passed" : `Tests failed: ${result.output?.slice(0, 200)}`,
       };
     }
-    
+
     case "schema_valid": {
       const data = check.params.data;
       const schema = check.params.schema;
@@ -739,17 +735,17 @@ async function runSingleCheck(check: VerificationCheck): Promise<VerificationRes
         message: valid ? "Schema validation passed" : "Schema validation failed",
       };
     }
-    
+
     case "no_errors": {
       const logs = check.params.logs as string[];
-      const hasErrors = logs.some(l => l.includes("ERROR") || l.includes("FAIL"));
+      const hasErrors = logs.some((l) => l.includes("ERROR") || l.includes("FAIL"));
       return {
         check,
         passed: !hasErrors,
         message: hasErrors ? "Errors found in logs" : "No errors in logs",
       };
     }
-    
+
     default:
       return {
         check,
@@ -760,12 +756,12 @@ async function runSingleCheck(check: VerificationCheck): Promise<VerificationRes
 }
 
 export function buildVerificationReport(results: VerificationResult[]): string {
-  const allPassed = results.every(r => r.passed);
-  
+  const allPassed = results.every((r) => r.passed);
+
   return [
     allPassed ? "✅ All verifications passed" : "❌ Some verifications failed",
     "",
-    ...results.map(r => `${r.passed ? "✓" : "✗"} ${r.check.type}: ${r.message}`),
+    ...results.map((r) => `${r.passed ? "✓" : "✗"} ${r.check.type}: ${r.message}`),
   ].join("\n");
 }
 ```
@@ -775,7 +771,11 @@ export function buildVerificationReport(results: VerificationResult[]): string {
 ```typescript
 // In task-orchestrator.ts, modify markSubagentTaskOutcome
 
-import { runVerification, buildVerificationReport, type VerificationCheck } from "./self-verification";
+import {
+  runVerification,
+  buildVerificationReport,
+  type VerificationCheck,
+} from "./self-verification";
 
 export async function markSubagentTaskOutcomeWithVerification(params: {
   runId: string;
@@ -786,31 +786,31 @@ export async function markSubagentTaskOutcomeWithVerification(params: {
   if (params.outcome === "ok" && params.verificationChecks?.length) {
     const results = await runVerification(params.verificationChecks);
     const report = buildVerificationReport(results);
-    
-    const allPassed = results.every(r => r.passed);
-    
+
+    const allPassed = results.every((r) => r.passed);
+
     if (!allPassed) {
       // Don't mark as completed, instead mark as evaluating with issues
       markSubagentTaskOutcome({
         runId: params.runId,
-        outcome: "ok",  // The run itself was ok
+        outcome: "ok", // The run itself was ok
         statusOverride: "evaluating",
         message: `Verification issues:\n${report}`,
       });
-      
+
       return "evaluating";
     }
-    
+
     // All passed, include report in completion
     markSubagentTaskOutcome({
       runId: params.runId,
       outcome: "ok",
       message: report,
     });
-    
+
     return "completed";
   }
-  
+
   // No verification, proceed normally
   return markSubagentTaskOutcome({
     runId: params.runId,
@@ -872,7 +872,7 @@ export function shouldRetry(params: {
   policy?: RetryPolicy;
 }): RetryDecision {
   const policy = params.policy ?? DEFAULT_RETRY_POLICY;
-  
+
   // Check max retries
   if (params.attemptIndex >= policy.maxRetries) {
     return {
@@ -881,7 +881,7 @@ export function shouldRetry(params: {
       reason: `Max retries (${policy.maxRetries}) exceeded`,
     };
   }
-  
+
   // Check for non-retryable errors
   if (params.lastError) {
     for (const pattern of NON_RETRYABLE_PATTERNS) {
@@ -894,12 +894,12 @@ export function shouldRetry(params: {
       }
     }
   }
-  
+
   // Calculate delay with exponential backoff + jitter
   const baseDelay = policy.baseDelayMs * Math.pow(policy.backoffMultiplier, params.attemptIndex);
   const jitter = Math.random() * policy.jitterMs;
   const delayMs = Math.min(baseDelay + jitter, policy.maxDelayMs);
-  
+
   return {
     shouldRetry: true,
     delayMs,
@@ -911,7 +911,7 @@ export function buildRetryMessage(decision: RetryDecision, taskId: string): stri
   if (!decision.shouldRetry) {
     return `Task ${taskId} failed permanently: ${decision.reason}`;
   }
-  
+
   return `Task ${taskId} retry scheduled: ${decision.reason}`;
 }
 ```
@@ -971,13 +971,13 @@ describe("task-state-linter", () => {
     expect(validateStateTransition("planning", "executing").valid).toBe(true);
     expect(validateStateTransition("executing", "evaluating").valid).toBe(true);
   });
-  
+
   it("rejects invalid transitions", () => {
     const result = validateStateTransition("completed", "executing");
     expect(result.valid).toBe(false);
     expect(result.error?.code).toBe("TERMINAL_STATE");
   });
-  
+
   it("provides fix instructions", () => {
     const result = validateStateTransition("accepted", "completed");
     expect(result.valid).toBe(false);
@@ -994,13 +994,13 @@ describe("task-state-linter", () => {
 describe("task orchestration with harness", () => {
   it("enforces state transitions on task updates", async () => {
     const task = await createTrackedTask({ sessionKey: "test", title: "Test" });
-    
+
     // Try invalid transition
     const result = updateTaskFromRunEvent({
       runId: task.runId,
       event: { status: "completed", ... },
     });
-    
+
     expect(result.updated).toBe(false);
     expect(result.linterError).toContain("INVALID_TRANSITION");
   });
@@ -1019,19 +1019,19 @@ describe("task orchestration with harness", () => {
 export const HARNESS_METRICS = {
   // Context budget
   context_utilization: "gauge",
-  context_zone: "label",  // smart/warning/dumb/overflow
-  
+  context_zone: "label", // smart/warning/dumb/overflow
+
   // Task lifecycle
   task_state_transitions: "counter",
   task_linter_violations: "counter",
   task_gc_deleted: "counter",
   task_gc_flagged: "counter",
-  
+
   // Retries
   task_retries_total: "counter",
   task_retries_exhausted: "counter",
   task_backpressure_delay_ms: "histogram",
-  
+
   // Specialization
   agent_role_spawn_count: "counter",
   agent_role_tool_denied: "counter",
@@ -1057,13 +1057,13 @@ rate(task_retries_exhausted_total[1h]) / rate(task_retries_total[1h])
 
 This implementation guide provides concrete steps to enhance OpenClaw's agent orchestration with Harness Engineering principles:
 
-| Phase | Component | Key Benefit |
-|-------|-----------|-------------|
-| 1 | State Linter | Prevents invalid state transitions |
-| 2 | Context Budget | Keeps agents in Smart Zone |
-| 3 | Task GC | Prevents unbounded growth |
-| 4 | Specialization | Role-based tool restrictions |
-| 5 | Verification | Self-checking task completion |
-| 6 | Backpressure | Controlled retry behavior |
+| Phase | Component      | Key Benefit                        |
+| ----- | -------------- | ---------------------------------- |
+| 1     | State Linter   | Prevents invalid state transitions |
+| 2     | Context Budget | Keeps agents in Smart Zone         |
+| 3     | Task GC        | Prevents unbounded growth          |
+| 4     | Specialization | Role-based tool restrictions       |
+| 5     | Verification   | Self-checking task completion      |
+| 6     | Backpressure   | Controlled retry behavior          |
 
 Each phase builds on the previous, creating a comprehensive Harness that ensures reliable, auditable, and maintainable agent outputs.

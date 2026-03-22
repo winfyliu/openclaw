@@ -1,6 +1,6 @@
 import type { OpenClawPluginApi } from "../runtime-api.js";
-import { buildFeishuConversationId, parseFeishuConversationId } from "./conversation-id.js";
 import { resolveTaskByRunId } from "../runtime-api.js";
+import { buildFeishuConversationId, parseFeishuConversationId } from "./conversation-id.js";
 import { sendMessageFeishu } from "./send.js";
 import { normalizeFeishuTarget } from "./targets.js";
 import { getFeishuThreadBindingManager } from "./thread-bindings.js";
@@ -92,7 +92,11 @@ function resolveFailureNeedType(input: string): "credentials" | "permission" | "
   ) {
     return "credentials";
   }
-  if (lowered.includes("permission") || lowered.includes("forbidden") || lowered.includes("unauthorized")) {
+  if (
+    lowered.includes("permission") ||
+    lowered.includes("forbidden") ||
+    lowered.includes("unauthorized")
+  ) {
     return "permission";
   }
   return "scope_decision";
@@ -155,8 +159,7 @@ function buildEndedStatusText(event: {
       status: "Timed out before completion.",
       completed: "Partial work may exist but final verification did not complete.",
       needType: "retry_decision",
-      needFromUser:
-        `Please tell me whether to retry, extend timeout, or narrow the scope. ${buildTaskReplyExample(event.taskId)}`,
+      needFromUser: `Please tell me whether to retry, extend timeout, or narrow the scope. ${buildTaskReplyExample(event.taskId)}`,
     });
   }
   if (outcome === "killed" || outcome === "reset" || outcome === "deleted") {
