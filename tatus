@@ -1,0 +1,59 @@
+* [33m32f92f11e[m[33m ([m[1;31morigin/main[m[33m)[m docs/feishu: sync harness references and task metadata updates
+* [33m48b7f22b3[m agents: complete harness execution hardening and quality gates
+*   [33m72b308f31[m Merge branch 'main' of github.com:winfyliu/openclaw
+[32m|[m[33m\[m  
+[32m|[m * [33m11aff6ed7[m fix(auth): support remote Codex OAuth manual input (#51631)
+[32m|[m * [33m59c405964[m Add Community plugins - Wecom (#29905)
+[32m|[m * [33m4af79f20d[m fix ci main cancellation behavior
+[32m|[m * [33m35e6310b2[m Docs: refresh generated config baseline (#51625)
+[32m|[m * [33mc9449d77b[m feat(gateway): persist webchat inbound images to disk (#51324)
+[32m|[m * [33m7bf437402[m fix: trim config validation startup imports (#51574)
+[32m|[m * [33m6db6e117d[m fix(ui): use current session context usage in chat notice
+[32m|[m * [33m8d733350d[m CI: run config docs drift check on PRs (#51618)
+[32m|[m * [33m5137a5130[m feat(github-copilot): resolve any model ID dynamically (#51325)
+[32m|[m * [33m42e708d00[m fix(agents): register simple completion transports
+* [33m|[m [33m7038440ce[m agents: add harness orchestration and Feishu task status updates
+[33m|[m[33m/[m  
+* [33m466debb75[m feat(telegram): auto-rename DM topics on first message (#51502)
+* [33mcdf49f0b0[m zalo: use photo_url for inbound images (#51543)
+* [33m3f7f2c8dc[m Voice Call: enforce spoken-output contract and fix stream TTS silence regression (#51500)
+* [33me9f715f27[m UI: fix and optimize overview log panels (#51477)
+* [33m2fd372836[m iOS: improve QR pairing flow (#51359)
+* [33mce6a48195[m test: fix whatsapp config-runtime mock store path
+* [33m8a05c0559[m fix: defer plugin runtime globals until use
+* [33m43513cd1d[m test: refresh plugin import boundary baseline (#51434)
+* [33m5bb5d7dab[m CLI: respect full timeout for loopback gateway probes (#47533)
+* [33m9fb78453e[m fix(discord): clarify startup readiness log (#51425)
+* [33md78e13f54[m fix(agent): clarify embedded transport errors (#51419)
+* [33m6b4c24c2e[m feat(telegram): support custom apiRoot for alternative API endpoints (#48842)
+* [33m598f1826d[m fix(subagent): include partial progress when subagent times out (#40700)
+* [33m5e417b44e[m Outbound: skip broadcast channel scan when channel is explicit
+* [33mb71686ab4[m Enhance web search provider config validation and compatibility handling
+* [33mc3be293dd[m fix(slack): unify slash conversation-runtime mock
+* [33me78129a4d[m feat(context-engine): pass incoming prompt to assemble (#50848)
+* [33m6a6f1b535[m changelog (#51322)
+* [33m751d5b784[m feat: add context engine transcript maintenance (#51191)
+* [33m6526074c8[m test: trim singleton cold-start reloads
+* [33m0a842de35[m test: widen low-profile singleton batching
+* [33m2364e45fe[m test: align extension runtime mocks with plugin-sdk (#51289)
+* [33me635cedb8[m test(openai): cover bundle media surfaces
+* [33md54ebed7c[m test(openai): add plugin entry live coverage
+* [33md1d46c6cf[m test(openai): broaden live model coverage
+* [33mf1802a5bc[m test(openai): add live provider probe
+* [33m6e20c4baa[m feat: add anthropic-vertex provider for Claude via GCP Vertex AI (#43356)
+* [33m42ca44718[m test(openrouter): add live plugin coverage
+* [33mfac64c239[m test: widen unit timing snapshot coverage
+* [33m39a4fe576[m test: normalize perf manifest paths
+* [33mc3972982b[m fix: sanitize malformed replay tool calls (#50005)
+* [33mcadbaa34c[m test: widen low-profile scheduler peeling
+* [33m994b42a5a[m test: parallelize safe audit case tables
+* [33maed1f6d80[m test: parallelize low-profile deferred lanes
+* [33m09cf6d80e[m test: batch thread-only unit lanes
+* [33m7abfff756[m Exec: harden host env override handling across gateway and node (#51207)
+* [33mc7134e629[m LINE: harden Express webhook parsing to verified raw body (#51202)
+* [33m11d71ca35[m pairing: keep setup codes bootstrap-token only (#51259)
+* [33m5a5e84ca1[m test: drop duplicate web search helper
+* [33mfa71ad7c5[m test: repair latest-main web search regressions
+* [33m23fef04c4[m test: fix setup finalize web search mocks (#51253)
+* [33m1b18742e8[m test: peel more slow unit files out of unit-fast
+* [33ma20ba7497[m test: add SSRF guard coverage for URL credential bypass vectors (#50523)
