@@ -1778,6 +1778,8 @@ export async function runEmbeddedAttempt(
           groupChannel: params.groupChannel,
           groupSpace: params.groupSpace,
           spawnedBy: params.spawnedBy,
+          taskId: params.taskId,
+          parentTaskNodeId: params.parentTaskNodeId,
           senderId: params.senderId,
           senderName: params.senderName,
           senderUsername: params.senderUsername,

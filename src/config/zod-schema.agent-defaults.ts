@@ -163,6 +163,7 @@ export const AgentDefaultsSchema = z
     typingIntervalSeconds: z.number().int().positive().optional(),
     typingMode: TypingModeSchema.optional(),
     heartbeat: HeartbeatSchema,
+    showTokenUsage: z.boolean().optional(),
     maxConcurrent: z.number().int().positive().optional(),
     subagents: z
       .object({

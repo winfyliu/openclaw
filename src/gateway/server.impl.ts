@@ -3,6 +3,7 @@ import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent
 import { getActiveEmbeddedRunCount } from "../agents/pi-embedded-runner/runs.js";
 import { registerSkillsChangeListener } from "../agents/skills/refresh.js";
 import { initSubagentRegistry } from "../agents/subagent-registry.js";
+import { disposeTaskLifecycleBridge, initTaskLifecycleBridge } from "../agents/task-lifecycle-bridge.js";
 import { getTotalPendingReplies } from "../auto-reply/reply/dispatcher-registry.js";
 import type { CanvasHostServer } from "../canvas-host/server.js";
 import { type ChannelId, listChannelPlugins } from "../channels/plugins/index.js";
@@ -547,6 +548,7 @@ export async function startGatewayServer(
   }
 
   initSubagentRegistry();
+  initTaskLifecycleBridge();
   const defaultAgentId = resolveDefaultAgentId(cfgAtStart);
   const defaultWorkspaceDir = resolveAgentWorkspaceDir(cfgAtStart, defaultAgentId);
   const deferredConfiguredChannelPluginIds = minimalTestGateway
@@ -1346,6 +1348,7 @@ export async function startGatewayServer(
         skillsRefreshTimer = null;
       }
       skillsChangeUnsub();
+      disposeTaskLifecycleBridge();
       authRateLimiter?.dispose();
       browserAuthRateLimiter.dispose();
       stopModelPricingRefresh();

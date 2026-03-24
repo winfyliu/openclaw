@@ -255,6 +255,10 @@ export function createOpenClawCodingTools(options?: {
   groupSpace?: string | null;
   /** Parent session key for subagent group policy inheritance. */
   spawnedBy?: string | null;
+  /** Root task identity inherited by this run. */
+  taskId?: string;
+  /** Parent task node id used for descendant spawn linkage. */
+  parentTaskNodeId?: string;
   senderId?: string | null;
   senderName?: string | null;
   senderUsername?: string | null;
@@ -508,6 +512,8 @@ export function createOpenClawCodingTools(options?: {
       agentGroupId: options?.groupId ?? null,
       agentGroupChannel: options?.groupChannel ?? null,
       agentGroupSpace: options?.groupSpace ?? null,
+      taskId: options?.taskId,
+      parentTaskNodeId: options?.parentTaskNodeId,
       agentDir: options?.agentDir,
       sandboxRoot,
       sandboxFsBridge,

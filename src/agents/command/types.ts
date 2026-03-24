@@ -88,6 +88,10 @@ export type AgentCommandOpts = {
   streamParams?: AgentStreamParams;
   /** Explicit workspace directory override (for subagents to inherit parent workspace). */
   workspaceDir?: SpawnedRunMetadata["workspaceDir"];
+  /** Root task identity for lifecycle/accounting lineage. */
+  taskId?: string;
+  /** Parent task node id used as ancestry root for new descendant spawns in this run. */
+  parentTaskNodeId?: string;
 };
 
 export type AgentCommandIngressOpts = Omit<

@@ -93,6 +93,12 @@ import { runEmbeddedPiAgent } from "./pi-embedded.js";
 import { buildWorkspaceSkillSnapshot } from "./skills.js";
 import { getSkillsSnapshotVersion } from "./skills/refresh.js";
 import { normalizeSpawnedRunMetadata } from "./spawned-context.js";
+import {
+  attachRootRun,
+  createRootTask,
+  findTaskByRunId,
+  findTaskBySessionKey,
+} from "./task-ledger.js";
 import { resolveAgentTimeoutMs } from "./timeout.js";
 import { ensureAgentWorkspace } from "./workspace.js";
 
@@ -487,6 +493,39 @@ function runAgentAttempt(params: {
     params.providerOverride === params.authProfileProvider
       ? params.sessionEntry?.authProfileOverride
       : undefined;
+
+  const resolvedTaskId =
+    params.opts.taskId?.trim() ||
+    findTaskByRunId(params.runId)?.taskId ||
+    findTaskBySessionKey(params.sessionKey)?.taskId ||
+    `task:${params.runId}`;
+  
+  const agentConfig = params.cfg.agents?.list?.find((a) => a.id === params.sessionAgentId);
+  const showTokenUsage = agentConfig?.showTokenUsage ?? params.cfg.agents?.defaults?.showTokenUsage ?? true;
+
+  const taskRecord = createRootTask({
+    taskId: resolvedTaskId,
+    rootSessionKey: params.sessionKey ?? params.sessionId,
+    title: params.body.trim().slice(0, 120) || "Agent task",
+    originalMessage: params.body,
+    requesterAgentId: params.sessionAgentId,
+    requesterChannel: params.opts.channel,
+    requesterAccountId: params.opts.accountId,
+    requesterTo: params.opts.to,
+    requesterThreadId:
+      params.opts.threadId != null ? String(params.opts.threadId) : undefined,
+    showTokenUsage,
+  });
+  if (!taskRecord.rootRunId) {
+    attachRootRun({
+      taskId: taskRecord.taskId,
+      runId: params.runId,
+      sessionKey: params.sessionKey,
+      startedAt: Date.now(),
+    });
+  }
+  const rootTaskNodeId = params.opts.parentTaskNodeId?.trim() || `root:${taskRecord.taskId}`;
+
   return runEmbeddedPiAgent({
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
@@ -500,6 +539,8 @@ function runAgentAttempt(params: {
     groupChannel: params.runContext.groupChannel,
     groupSpace: params.runContext.groupSpace,
     spawnedBy: params.spawnedBy,
+    taskId: resolvedTaskId,
+    parentTaskNodeId: rootTaskNodeId,
     currentChannelId: params.runContext.currentChannelId,
     currentThreadTs: params.runContext.currentThreadTs,
     replyToMode: params.runContext.replyToMode,

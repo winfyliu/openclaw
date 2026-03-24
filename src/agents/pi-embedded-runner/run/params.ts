@@ -43,6 +43,10 @@ export type RunEmbeddedPiAgentParams = {
   groupSpace?: string | null;
   /** Parent session key for subagent policy inheritance. */
   spawnedBy?: string | null;
+  /** Root task identity for lifecycle/accounting lineage. */
+  taskId?: string;
+  /** Parent task node id for child spawn ancestry in this run. */
+  parentTaskNodeId?: string;
   senderId?: string | null;
   senderName?: string | null;
   senderUsername?: string | null;

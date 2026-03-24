@@ -15,6 +15,8 @@ export type SpawnedToolContext = {
   agentGroupChannel?: string | null;
   agentGroupSpace?: string | null;
   workspaceDir?: string;
+  taskId?: string;
+  parentTaskNodeId?: string;
 };
 
 export type NormalizedSpawnedRunMetadata = {

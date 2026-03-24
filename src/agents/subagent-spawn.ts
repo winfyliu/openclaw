@@ -36,6 +36,8 @@ import {
 import { resolveSubagentCapabilities } from "./subagent-capabilities.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import { countActiveRunsForSession, registerSubagentRun } from "./subagent-registry.js";
+import { registerTaskNode } from "./task-ledger.js";
+import { TASK_NODE_KIND_SUBAGENT_RUN } from "./task-ledger.types.js";
 import { readStringParam } from "./tools/common.js";
 import {
   resolveDisplaySessionKey,
@@ -83,6 +85,10 @@ export type SpawnSubagentContext = {
   requesterAgentIdOverride?: string;
   /** Explicit workspace directory for subagent to inherit (optional). */
   workspaceDir?: string;
+  /** Root task id inherited from the parent run. */
+  taskId?: string;
+  /** Parent task node id used to attach child run lineage. */
+  parentTaskNodeId?: string;
 };
 
 export const SUBAGENT_SPAWN_ACCEPTED_NOTE =
@@ -647,6 +653,7 @@ export async function spawnSubagentDirect(
   }
 
   const childIdem = crypto.randomUUID();
+  const childTaskNodeId = ctx.taskId ? `subagent:${childIdem}` : undefined;
   let childRunId: string = childIdem;
   try {
     const {
@@ -666,6 +673,8 @@ export async function spawnSubagentDirect(
         idempotencyKey: childIdem,
         deliver: false,
         lane: AGENT_LANE_SUBAGENT,
+        taskId: ctx.taskId,
+        parentTaskNodeId: childTaskNodeId,
         extraSystemPrompt: childSystemPrompt,
         thinking: thinkingOverride,
         timeout: runTimeoutSeconds,
@@ -735,6 +744,23 @@ export async function spawnSubagentDirect(
       childSessionKey,
       runId: childRunId,
     };
+  }
+
+  if (ctx.taskId && childTaskNodeId) {
+    try {
+      registerTaskNode({
+        nodeId: childTaskNodeId,
+        taskId: ctx.taskId,
+        parentNodeId: ctx.parentTaskNodeId,
+        kind: TASK_NODE_KIND_SUBAGENT_RUN,
+        label: label || task,
+        runId: childRunId,
+        sessionKey: childSessionKey,
+        controllerSessionKey: requesterInternalKey,
+      });
+    } catch {
+      // Do not fail spawn path on task-ledger bookkeeping errors.
+    }
   }
 
   try {

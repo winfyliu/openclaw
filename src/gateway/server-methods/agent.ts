@@ -229,6 +229,8 @@ export const agentHandlers: GatewayRequestHandlers = {
       groupId?: string;
       groupChannel?: string;
       groupSpace?: string;
+      taskId?: string;
+      parentTaskNodeId?: string;
       lane?: string;
       extraSystemPrompt?: string;
       internalEvents?: AgentInternalEvent[];
@@ -699,6 +701,11 @@ export const agentHandlers: GatewayRequestHandlers = {
         extraSystemPrompt: request.extraSystemPrompt,
         internalEvents: request.internalEvents,
         inputProvenance,
+        taskId: typeof request.taskId === "string" ? request.taskId.trim() || undefined : undefined,
+        parentTaskNodeId:
+          typeof request.parentTaskNodeId === "string"
+            ? request.parentTaskNodeId.trim() || undefined
+            : undefined,
         // Internal-only: allow workspace override for spawned subagent runs.
         workspaceDir: resolveIngressWorkspaceOverrideForSpawnedRun({
           spawnedBy: spawnedByValue,

@@ -203,6 +203,8 @@ export function createSessionsSpawnTool(
           agentGroupSpace: opts?.agentGroupSpace,
           requesterAgentIdOverride: opts?.requesterAgentIdOverride,
           workspaceDir: opts?.workspaceDir,
+          taskId: opts?.taskId,
+          parentTaskNodeId: opts?.parentTaskNodeId,
         },
       );
 

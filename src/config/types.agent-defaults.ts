@@ -219,6 +219,8 @@ export type AgentDefaultsConfig = {
   typingIntervalSeconds?: number;
   /** Typing indicator start mode (never|instant|thinking|message). */
   typingMode?: TypingMode;
+  /** Show token usage in task summaries and UI. */
+  showTokenUsage?: boolean;
   /** Periodic background heartbeat runs. */
   heartbeat?: {
     /** Heartbeat interval (duration string, default unit: minutes; default: 30m). */
