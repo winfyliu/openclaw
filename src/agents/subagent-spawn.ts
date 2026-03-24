@@ -38,6 +38,8 @@ import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import { countActiveRunsForSession, registerSubagentRun } from "./subagent-registry.js";
 import { registerSpawnedSubagentTask } from "./task-orchestrator.js";
 import { countActiveTasksForSession } from "./task-registry.js";
+import { registerTaskNode } from "./task-ledger.js";
+import { TASK_NODE_KIND_SUBAGENT_RUN } from "./task-ledger.types.js";
 import { readStringParam } from "./tools/common.js";
 import {
   resolveDisplaySessionKey,

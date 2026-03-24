@@ -56,6 +56,18 @@ Implementation must follow:
 - **Last updated**: `2026-03-24`
 - **Primary source of truth**: this checklist + the implementation plan
 
+### Post-Merge Integration (2026-03-24)
+
+After merging with remote branch, the following integration work was completed:
+
+| Issue | Resolution |
+|-------|------------|
+| `subagent-spawn.ts` missing imports | Added `registerTaskNode` and `TASK_NODE_KIND_SUBAGENT_RUN` imports |
+| `task-events.ts` overwritten | Added Phase 1 status types (`TaskLedgerStatus`, `TaskNodeStatus`) alongside remote branch's `TaskStatus` |
+| State machine conflict | Two independent state machines now coexist: Foundation (5 states) and Business (9 states) |
+
+**Architecture**: Two-layer task management is now in place. See [harness-engineering-implementation.md](h:\Claw\WinfyliuOpenclaw\openclaw\docs\concepts\harness-engineering-implementation.md) for details.
+
 ---
 
 ## 1. Design baseline and scope lock
@@ -361,3 +373,4 @@ Use this section to track active blockers.
 - **2026-03-24**: Added unit tests for `task-lifecycle-bridge`, `task-token-accounting`, and `task-summary`.
 - **2026-03-24**: Added `showTokenUsage` to agent configuration and implemented optional token footer in `task-summary`.
 - **2026-03-24**: Added integration tests for task control plane (`task-control-plane.integration.test.ts`) and verified regression protection. Phase 1 implementation is now complete.
+- **2026-03-24**: **Post-merge integration**: Fixed missing imports in `subagent-spawn.ts`, added dual status types to `task-events.ts` to support both Foundation and Business layers. Updated `task-ledger.ts` to use new `TaskLedgerStatus` functions. Documented unified two-layer architecture in `harness-engineering-implementation.md`.

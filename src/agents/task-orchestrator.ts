@@ -16,6 +16,13 @@ import {
 } from "./task-registry.js";
 import { withTaskResourceLock } from "./task-resource-locks.js";
 import type { ResumeRoutingDecision } from "./task-resume.js";
+import {
+  runVerification,
+  buildVerificationReport,
+  inferVerificationScenario,
+  type VerificationCheck,
+  type VerificationScenario,
+} from "./self-verification.js";
 
 const TASK_RESUME_FORWARD_RETRY_CONFIG = {
   attempts: 3,
@@ -186,6 +193,8 @@ export function markSubagentTaskOutcome(params: {
   runId: string;
   status: "ok" | "timeout" | "error" | "unknown";
   error?: string;
+  verificationChecks?: VerificationCheck[];
+  scenario?: VerificationScenario;
 }): void {
   const cleanedRunId = params.runId.trim();
   if (!cleanedRunId) {
@@ -274,19 +283,64 @@ export function markSubagentTaskOutcome(params: {
         return;
       }
 
-      void updateTaskFromRunEvent({
-        runId: cleanedRunId,
-        event: {
-          type: "task_progress",
-          eventId: randomUUID(),
-          taskId: task.taskId,
-          version: nowVersion(),
-          status: "evaluating",
-          progress: 85,
-          message: "Subagent is evaluating completion quality.",
-          timestamp: Date.now(),
-        },
-      });
+      // Run self-verification if checks are provided
+      if (params.verificationChecks && params.verificationChecks.length > 0) {
+        const scenario = params.scenario || inferVerificationScenario(task.title);
+        const results = await runVerification(params.verificationChecks, scenario);
+
+        if (results.length > 0) {
+          const report = buildVerificationReport(results);
+          const allPassed = results.every((r) => r.passed);
+
+          if (!allPassed) {
+            // Verification failed, mark as evaluating with issues
+            void updateTaskFromRunEvent({
+              runId: cleanedRunId,
+              event: {
+                type: "task_progress",
+                eventId: randomUUID(),
+                taskId: task.taskId,
+                version: nowVersion(),
+                status: "evaluating",
+                progress: 90,
+                message: `Verification issues:\n${report}`,
+                timestamp: Date.now(),
+              },
+            });
+            return; // Stop here, don't mark as completed
+          }
+          
+          // Verification passed, include report in completion message
+          void updateTaskFromRunEvent({
+            runId: cleanedRunId,
+            event: {
+              type: "task_progress",
+              eventId: randomUUID(),
+              taskId: task.taskId,
+              version: nowVersion(),
+              status: "evaluating",
+              progress: 95,
+              message: `Verification passed:\n${report}`,
+              timestamp: Date.now(),
+            },
+          });
+        }
+      } else {
+        void updateTaskFromRunEvent({
+          runId: cleanedRunId,
+          event: {
+            type: "task_progress",
+            eventId: randomUUID(),
+            taskId: task.taskId,
+            version: nowVersion(),
+            status: "evaluating",
+            progress: 85,
+            message: "Subagent is evaluating completion quality.",
+            timestamp: Date.now(),
+          },
+        });
+      }
+
       void updateTaskFromRunEvent({
         runId: cleanedRunId,
         event: {

@@ -11,6 +11,79 @@ read_when:
 
 This document provides concrete implementation guidance for enhancing OpenClaw's agent orchestration system based on Harness Engineering principles.
 
+## Unified Task Architecture (Post-Merge)
+
+After the merge of Phase 1 (task-ledger) and the remote branch (task-registry + task-orchestrator), OpenClaw now has a **two-layer task management architecture**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Business Layer (User-Facing)                  │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+│  │ task-registry   │  │task-orchestrator│  │   task-resume   │  │
+│  │                 │  │                 │  │                 │  │
+│  │ • Progress %    │  │ • Spawning      │  │ • Recovery      │  │
+│  │ • Blocked state │  │ • Quota control │  │ • Credentials   │  │
+│  │ • User messages │  │ • Verification  │  │ • Resume input  │  │
+│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘  │
+│           │                    │                    │           │
+│           └────────────────────┼────────────────────┘           │
+│                                │                                │
+│                    State: accepted → planning → executing       │
+│                           → evaluating → completed/failed       │
+└────────────────────────────────┼────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│               Foundation Layer (Control Plane)                   │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+│  │  task-ledger    │  │task-lifecycle   │  │ task-token      │  │
+│  │                 │  │     -bridge     │  │  -accounting    │  │
+│  │ • Task identity │  │                 │  │                 │  │
+│  │ • Lineage       │  │ • Event mapping │  │ • Aggregation   │  │
+│  │ • Node tree     │  │ • Lifecycle     │  │ • Rollup        │  │
+│  │ • Token rollup  │  │ • Observability │  │ • Formatting    │  │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
+│                                                                  │
+│                    State: created → accepted → running          │
+│                         → waiting_children → completed/failed   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Layer Responsibilities
+
+| Layer | Primary Concerns | State Machine | Storage |
+|-------|-----------------|---------------|---------|
+| **Foundation** | Identity, lineage, token accounting, lifecycle | 5 states (created → completed/failed) | task-ledger.store (JSON) |
+| **Business** | Progress, user interaction, quota, recovery | 9 states (accepted → blocked/completed) | session store |
+
+### Why Two Layers?
+
+1. **Foundation Layer (Phase 1)**: Provides the "control plane" that tracks:
+   - Which tasks exist and their relationships (parent-child)
+   - Token consumption across the entire task tree
+   - Lifecycle events (start, end, error) for observability
+   - Terminal state reconciliation (task completes when all children settle)
+   
+   **Note**: The main Agent interacts with users directly, but subtasks cannot pause to wait for user input. This layer focuses on backend tracking, not user interaction patterns.
+
+2. **Business Layer (Remote Branch)**: Provides the "user experience":
+   - Progress percentages for UI display
+   - **Blocked state** - subtasks can pause and wait for user to provide credentials or input
+   - **Task resume** - continue execution after user provides the required input
+   - Per-session task quotas to prevent runaway spawning
+
+### Integration Pattern
+
+Both layers are **integrated but independent**:
+- `subagent-spawn.ts` calls both `registerTaskNode()` (foundation) and `registerSpawnedSubagentTask()` (business)
+- The foundation layer observes events via `task-lifecycle-bridge.ts`
+- The business layer handles user-facing progress via `task-orchestrator.ts`
+
+This separation allows:
+- Foundation layer to remain stable and minimal
+- Business layer to evolve with UX requirements
+- Each layer to have its own state machine optimized for its purpose
+
 ## Current State Analysis
 
 ### What OpenClaw Already Has
@@ -664,21 +737,61 @@ export function spawnSpecializedAgent(params: {
 
 ### Problem
 
-Agents mark tasks complete without verifying outputs.
+Agents mark tasks complete without verifying outputs. Verification can also consume excessive tokens if not managed properly across different task types.
 
 ### Solution
 
-Add verification hooks that run before task completion.
+Add verification hooks that run before task completion, with a scenario-based strategy to optimize token usage and strictness.
 
 ### Implementation
 
 ```typescript
 // src/agents/self-verification.ts
 
+export type VerificationScenario = 
+  | "critical"      // Production deployment, data migration
+  | "standard"      // Code development, feature implementation
+  | "exploratory"   // Research, analysis, exploration
+  | "cleanup";      // Cleanup, refactoring
+
+export type VerificationPolicy = {
+  runVerification: boolean;
+  required: boolean;
+  defaultChecks: Array<"file_exists" | "test_passes" | "schema_valid" | "no_errors">;
+  maxRetries: number;
+};
+
+export const SCENARIO_POLICIES: Record<VerificationScenario, VerificationPolicy> = {
+  critical: {
+    runVerification: true,
+    required: true,
+    defaultChecks: ["file_exists", "test_passes", "schema_valid", "no_errors"],
+    maxRetries: 3,
+  },
+  standard: {
+    runVerification: true,
+    required: false,
+    defaultChecks: ["file_exists", "test_passes"],
+    maxRetries: 2,
+  },
+  exploratory: {
+    runVerification: false,
+    required: false,
+    defaultChecks: [],
+    maxRetries: 1,
+  },
+  cleanup: {
+    runVerification: true,
+    required: false,
+    defaultChecks: ["no_errors"],
+    maxRetries: 1,
+  },
+};
+
 export type VerificationCheck = {
   type: "file_exists" | "test_passes" | "schema_valid" | "no_errors" | "custom";
   params: Record<string, unknown>;
-  required: boolean;
+  required?: boolean; // Overrides policy if set
 };
 
 export type VerificationResult = {
@@ -687,15 +800,25 @@ export type VerificationResult = {
   message: string;
 };
 
-export async function runVerification(checks: VerificationCheck[]): Promise<VerificationResult[]> {
+export async function runVerification(
+  checks: VerificationCheck[],
+  scenario: VerificationScenario = "standard"
+): Promise<VerificationResult[]> {
+  const policy = SCENARIO_POLICIES[scenario];
+  
+  if (!policy.runVerification) {
+    return []; // Skip verification for this scenario
+  }
+
   const results: VerificationResult[] = [];
 
   for (const check of checks) {
     const result = await runSingleCheck(check);
     results.push(result);
 
+    const isRequired = check.required ?? policy.required;
     // Fail fast on required checks
-    if (!result.passed && check.required) {
+    if (!result.passed && isRequired) {
       break;
     }
   }
@@ -775,18 +898,32 @@ import {
   runVerification,
   buildVerificationReport,
   type VerificationCheck,
+  type VerificationScenario,
 } from "./self-verification";
 
 export async function markSubagentTaskOutcomeWithVerification(params: {
   runId: string;
   outcome: "ok" | "timeout" | "error";
   verificationChecks?: VerificationCheck[];
+  scenario?: VerificationScenario;
 }): Promise<TaskStatus> {
   // If outcome is ok and we have verification checks, run them
   if (params.outcome === "ok" && params.verificationChecks?.length) {
-    const results = await runVerification(params.verificationChecks);
-    const report = buildVerificationReport(results);
+    const results = await runVerification(
+      params.verificationChecks, 
+      params.scenario || "standard"
+    );
+    
+    // If verification was skipped (e.g., exploratory scenario), results will be empty
+    if (results.length === 0) {
+      markSubagentTaskOutcome({
+        runId: params.runId,
+        outcome: "ok",
+      });
+      return "completed";
+    }
 
+    const report = buildVerificationReport(results);
     const allPassed = results.every((r) => r.passed);
 
     if (!allPassed) {

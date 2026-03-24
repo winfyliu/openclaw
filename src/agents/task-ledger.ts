@@ -1,11 +1,13 @@
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import {
+  canTransitionTaskLedgerStatus,
   canTransitionTaskNodeStatus,
-  canTransitionTaskStatus,
+  isTaskLedgerFailureStatus,
+  isTaskLedgerPendingStatus,
+  isTaskLedgerTerminalStatus,
   isTaskNodeFailureStatus,
   isTaskNodePendingStatus,
   isTaskNodeTerminalStatus,
-  isTaskTerminalStatus,
 } from "./task-events.js";
 import { loadTaskLedgerFromDisk, saveTaskLedgerToDisk } from "./task-ledger.store.js";
 import {
@@ -217,7 +219,7 @@ function recomputeTaskTokenUsage(task: TaskRecord) {
 }
 
 function inferTaskStatus(task: TaskRecord): TaskRecord["status"] {
-  if (isTaskTerminalStatus(task.status)) {
+  if (isTaskLedgerTerminalStatus(task.status)) {
     return task.status;
   }
 
@@ -258,9 +260,9 @@ function reconcileTask(task: TaskRecord) {
   if (task.status === inferred) {
     return;
   }
-  if (canTransitionTaskStatus(task.status, inferred)) {
+  if (canTransitionTaskLedgerStatus(task.status, inferred)) {
     task.status = inferred;
-  } else if (!isTaskTerminalStatus(task.status)) {
+  } else if (!isTaskLedgerTerminalStatus(task.status)) {
     task.status = inferred;
   }
   if (task.status === TASK_STATUS_RUNNING && !task.startedAt) {
@@ -632,7 +634,7 @@ export function setTaskStatus(taskId: string, status: TaskRecord["status"]): Tas
     return null;
   }
   if (task.status !== status) {
-    if (canTransitionTaskStatus(task.status, status) || !isTaskTerminalStatus(task.status)) {
+    if (canTransitionTaskLedgerStatus(task.status, status) || !isTaskLedgerTerminalStatus(task.status)) {
       task.status = status;
     }
   }
