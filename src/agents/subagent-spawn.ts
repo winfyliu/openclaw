@@ -36,8 +36,8 @@ import {
 import { resolveSubagentCapabilities } from "./subagent-capabilities.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import { countActiveRunsForSession, registerSubagentRun } from "./subagent-registry.js";
-import { registerTaskNode } from "./task-ledger.js";
-import { TASK_NODE_KIND_SUBAGENT_RUN } from "./task-ledger.types.js";
+import { registerSpawnedSubagentTask } from "./task-orchestrator.js";
+import { countActiveTasksForSession } from "./task-registry.js";
 import { readStringParam } from "./tools/common.js";
 import {
   resolveDisplaySessionKey,
@@ -393,6 +393,15 @@ export async function spawnSubagentDirect(
     };
   }
 
+  const maxActiveTasks = cfg.agents?.defaults?.subagents?.maxActiveTasksPerSession ?? 5;
+  const activeTasks = countActiveTasksForSession(requesterInternalKey);
+  if (activeTasks >= maxActiveTasks) {
+    return {
+      status: "forbidden",
+      error: `sessions_spawn has reached max active tasks for this session (${activeTasks}/${maxActiveTasks})`,
+    };
+  }
+
   const requesterAgentId = normalizeAgentId(
     ctx.requesterAgentIdOverride ?? parseAgentSessionKey(requesterInternalKey)?.agentId,
   );
@@ -566,11 +575,11 @@ export async function spawnSubagentDirect(
     childSessionKey,
     label: label || undefined,
     task,
+    childRole: childCapabilities.role,
     acpEnabled: cfg.acp?.enabled !== false && !childRuntime.sandboxed,
     childDepth,
     maxSpawnDepth,
   });
-
   let retainOnSessionKeep = false;
   let attachmentsReceipt:
     | {
@@ -764,6 +773,7 @@ export async function spawnSubagentDirect(
   }
 
   try {
+    let trackedTaskId: string | undefined;
     registerSubagentRun({
       runId: childRunId,
       childSessionKey,
@@ -783,6 +793,46 @@ export async function spawnSubagentDirect(
       attachmentsRootDir: attachmentRootDir,
       retainAttachmentsOnKeep: retainOnSessionKeep,
     });
+    try {
+      const trackedTask = registerSpawnedSubagentTask({
+        requesterSessionKey: requesterInternalKey,
+        childSessionKey,
+        runId: childRunId,
+        task,
+        label: label || undefined,
+      });
+      trackedTaskId = trackedTask.taskId;
+    } catch {
+      // Task-progress tracking is best-effort and must not fail spawns.
+    }
+    if (hookRunner?.hasHooks("subagent_spawned")) {
+      try {
+        await hookRunner.runSubagentSpawned(
+          {
+            runId: childRunId,
+            childSessionKey,
+            agentId: targetAgentId,
+            label: label || undefined,
+            requester: {
+              channel: requesterOrigin?.channel,
+              accountId: requesterOrigin?.accountId,
+              to: requesterOrigin?.to,
+              threadId: requesterOrigin?.threadId,
+            },
+            threadRequested: requestThreadBinding,
+            mode: spawnMode,
+            taskId: trackedTaskId,
+          },
+          {
+            runId: childRunId,
+            childSessionKey,
+            requesterSessionKey: requesterInternalKey,
+          },
+        );
+      } catch {
+        // Spawn should still return accepted if spawn lifecycle hooks fail.
+      }
+    }
   } catch (err) {
     if (attachmentAbsDir) {
       try {
@@ -806,34 +856,6 @@ export async function spawnSubagentDirect(
       childSessionKey,
       runId: childRunId,
     };
-  }
-
-  if (hookRunner?.hasHooks("subagent_spawned")) {
-    try {
-      await hookRunner.runSubagentSpawned(
-        {
-          runId: childRunId,
-          childSessionKey,
-          agentId: targetAgentId,
-          label: label || undefined,
-          requester: {
-            channel: requesterOrigin?.channel,
-            accountId: requesterOrigin?.accountId,
-            to: requesterOrigin?.to,
-            threadId: requesterOrigin?.threadId,
-          },
-          threadRequested: requestThreadBinding,
-          mode: spawnMode,
-        },
-        {
-          runId: childRunId,
-          childSessionKey,
-          requesterSessionKey: requesterInternalKey,
-        },
-      );
-    } catch {
-      // Spawn should still return accepted if spawn lifecycle hooks fail.
-    }
   }
 
   // Emit lifecycle event so the gateway can broadcast sessions.changed to SSE subscribers.

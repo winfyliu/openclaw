@@ -9,6 +9,7 @@ import {
   resetDiagnosticSessionStateForTest,
 } from "./diagnostic-session-state.js";
 import {
+  logMessageFirstAck,
   logSessionStateChange,
   resetDiagnosticStateForTest,
   resolveStuckSessionWarnMs,
@@ -136,5 +137,42 @@ describe("stuck session diagnostics threshold", () => {
     expect(resolveStuckSessionWarnMs({ diagnostics: { stuckSessionWarnMs: -1 } })).toBe(120_000);
     expect(resolveStuckSessionWarnMs({ diagnostics: { stuckSessionWarnMs: 0 } })).toBe(120_000);
     expect(resolveStuckSessionWarnMs()).toBe(120_000);
+  });
+});
+
+describe("message first ack diagnostics", () => {
+  beforeEach(() => {
+    resetDiagnosticEventsForTest();
+  });
+
+  afterEach(() => {
+    resetDiagnosticEventsForTest();
+  });
+
+  it("emits message.first_ack with sanitized latency", () => {
+    const events: Array<{ type: string; ackLatencyMs?: number; reason?: string }> = [];
+    const unsubscribe = onDiagnosticEvent((event) => {
+      events.push({
+        type: event.type,
+        ackLatencyMs: event.type === "message.first_ack" ? event.ackLatencyMs : undefined,
+        reason: event.type === "message.first_ack" ? event.reason : undefined,
+      });
+    });
+    try {
+      logMessageFirstAck({
+        channel: "feishu",
+        chatId: "chat-1",
+        messageId: "msg-1",
+        sessionKey: "agent:main:main",
+        ackLatencyMs: -12.3,
+        reason: "final_reply",
+      });
+    } finally {
+      unsubscribe();
+    }
+    const firstAck = events.find((event) => event.type === "message.first_ack");
+    expect(firstAck).toBeDefined();
+    expect(firstAck?.ackLatencyMs).toBe(0);
+    expect(firstAck?.reason).toBe("final_reply");
   });
 });

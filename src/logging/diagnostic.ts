@@ -191,6 +191,37 @@ export function logMessageProcessed(params: {
   markActivity();
 }
 
+export function logMessageFirstAck(params: {
+  channel: string;
+  messageId?: number | string;
+  chatId?: number | string;
+  sessionId?: string;
+  sessionKey?: string;
+  ackLatencyMs: number;
+  reason?: string;
+}) {
+  const payload = `message first ack: channel=${params.channel} chatId=${params.chatId ?? "unknown"} messageId=${
+    params.messageId ?? "unknown"
+  } sessionId=${params.sessionId ?? "unknown"} sessionKey=${params.sessionKey ?? "unknown"} ackLatency=${Math.max(
+    0,
+    Math.round(params.ackLatencyMs),
+  )}ms${params.reason ? ` reason=${params.reason}` : ""}`;
+  if (diag.isEnabled("debug")) {
+    diag.debug(payload);
+  }
+  emitDiagnosticEvent({
+    type: "message.first_ack",
+    channel: params.channel,
+    chatId: params.chatId,
+    messageId: params.messageId,
+    sessionId: params.sessionId,
+    sessionKey: params.sessionKey,
+    ackLatencyMs: Math.max(0, Math.round(params.ackLatencyMs)),
+    reason: params.reason,
+  });
+  markActivity();
+}
+
 export function logSessionStateChange(
   params: SessionRef & {
     state: SessionStateValue;

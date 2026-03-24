@@ -1,133 +1,79 @@
-import {
-  TASK_NODE_STATUS_CANCELLED,
-  TASK_NODE_STATUS_COMPLETED,
-  TASK_NODE_STATUS_CREATED,
-  TASK_NODE_STATUS_FAILED,
-  TASK_NODE_STATUS_RUNNING,
-  TASK_NODE_STATUS_TIMEOUT,
-  TASK_STATUS_ACCEPTED,
-  TASK_STATUS_CANCELLED,
-  TASK_STATUS_COMPLETED,
-  TASK_STATUS_CREATED,
-  TASK_STATUS_FAILED,
-  TASK_STATUS_RUNNING,
-  TASK_STATUS_WAITING_CHILDREN,
-  type TaskNodeStatus,
-  type TaskStatus,
-} from "./task-ledger.types.js";
+export const TASK_STATUSES = [
+  "accepted",
+  "planning",
+  "executing",
+  "evaluating",
+  "completed",
+  "failed",
+  "timeout",
+  "blocked",
+  "cancelled",
+] as const;
 
-const TASK_TERMINAL_STATUSES = new Set<TaskStatus>([
-  TASK_STATUS_COMPLETED,
-  TASK_STATUS_FAILED,
-  TASK_STATUS_CANCELLED,
-]);
+export type TaskStatus = (typeof TASK_STATUSES)[number];
 
-const TASK_PENDING_STATUSES = new Set<TaskStatus>([
-  TASK_STATUS_CREATED,
-  TASK_STATUS_ACCEPTED,
-  TASK_STATUS_RUNNING,
-  TASK_STATUS_WAITING_CHILDREN,
-]);
-
-const TASK_FAILURE_STATUSES = new Set<TaskStatus>([TASK_STATUS_FAILED, TASK_STATUS_CANCELLED]);
-
-const TASK_NODE_TERMINAL_STATUSES = new Set<TaskNodeStatus>([
-  TASK_NODE_STATUS_COMPLETED,
-  TASK_NODE_STATUS_FAILED,
-  TASK_NODE_STATUS_TIMEOUT,
-  TASK_NODE_STATUS_CANCELLED,
-]);
-
-const TASK_NODE_PENDING_STATUSES = new Set<TaskNodeStatus>([
-  TASK_NODE_STATUS_CREATED,
-  TASK_NODE_STATUS_RUNNING,
-]);
-
-const TASK_NODE_FAILURE_STATUSES = new Set<TaskNodeStatus>([
-  TASK_NODE_STATUS_FAILED,
-  TASK_NODE_STATUS_TIMEOUT,
-  TASK_NODE_STATUS_CANCELLED,
-]);
-
-const TASK_STATUS_TRANSITIONS: Readonly<Record<TaskStatus, readonly TaskStatus[]>> = {
-  [TASK_STATUS_CREATED]: [TASK_STATUS_ACCEPTED, TASK_STATUS_FAILED, TASK_STATUS_CANCELLED],
-  [TASK_STATUS_ACCEPTED]: [
-    TASK_STATUS_RUNNING,
-    TASK_STATUS_WAITING_CHILDREN,
-    TASK_STATUS_FAILED,
-    TASK_STATUS_CANCELLED,
-  ],
-  [TASK_STATUS_RUNNING]: [
-    TASK_STATUS_WAITING_CHILDREN,
-    TASK_STATUS_COMPLETED,
-    TASK_STATUS_FAILED,
-    TASK_STATUS_CANCELLED,
-  ],
-  [TASK_STATUS_WAITING_CHILDREN]: [
-    TASK_STATUS_RUNNING,
-    TASK_STATUS_COMPLETED,
-    TASK_STATUS_FAILED,
-    TASK_STATUS_CANCELLED,
-  ],
-  [TASK_STATUS_COMPLETED]: [],
-  [TASK_STATUS_FAILED]: [],
-  [TASK_STATUS_CANCELLED]: [],
+export type TaskProgressEvent = {
+  type: "task_progress";
+  eventId: string;
+  taskId: string;
+  version: number;
+  status: TaskStatus;
+  progress?: number;
+  message?: string;
+  timestamp: number;
 };
 
-const TASK_NODE_STATUS_TRANSITIONS: Readonly<Record<TaskNodeStatus, readonly TaskNodeStatus[]>> = {
-  [TASK_NODE_STATUS_CREATED]: [
-    TASK_NODE_STATUS_RUNNING,
-    TASK_NODE_STATUS_COMPLETED,
-    TASK_NODE_STATUS_FAILED,
-    TASK_NODE_STATUS_TIMEOUT,
-    TASK_NODE_STATUS_CANCELLED,
-  ],
-  [TASK_NODE_STATUS_RUNNING]: [
-    TASK_NODE_STATUS_COMPLETED,
-    TASK_NODE_STATUS_FAILED,
-    TASK_NODE_STATUS_TIMEOUT,
-    TASK_NODE_STATUS_CANCELLED,
-  ],
-  [TASK_NODE_STATUS_COMPLETED]: [],
-  [TASK_NODE_STATUS_FAILED]: [],
-  [TASK_NODE_STATUS_TIMEOUT]: [],
-  [TASK_NODE_STATUS_CANCELLED]: [],
+export type TaskBlockedReason =
+  | "credentials"
+  | "permission"
+  | "missing_input"
+  | "external_dependency"
+  | "unknown";
+
+export type TaskBlockedUserInputEvent = {
+  type: "task_blocked_user_input";
+  eventId: string;
+  taskId: string;
+  version: number;
+  reason: TaskBlockedReason;
+  request: string;
+  timestamp: number;
 };
 
-export function isTaskTerminalStatus(status: TaskStatus): boolean {
-  return TASK_TERMINAL_STATUSES.has(status);
-}
+export type TaskEvent = TaskProgressEvent | TaskBlockedUserInputEvent;
 
-export function isTaskPendingStatus(status: TaskStatus): boolean {
-  return TASK_PENDING_STATUSES.has(status);
-}
-
-export function isTaskFailureStatus(status: TaskStatus): boolean {
-  return TASK_FAILURE_STATUSES.has(status);
-}
+const TASK_TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
+  accepted: ["planning", "blocked", "cancelled"],
+  planning: ["executing", "blocked", "cancelled"],
+  executing: ["evaluating", "blocked", "failed", "timeout", "cancelled"],
+  evaluating: ["completed", "failed", "blocked", "cancelled"],
+  blocked: ["planning", "executing", "blocked", "cancelled"],
+  completed: [],
+  failed: [],
+  timeout: [],
+  cancelled: [],
+};
 
 export function canTransitionTaskStatus(from: TaskStatus, to: TaskStatus): boolean {
   if (from === to) {
     return true;
   }
-  return TASK_STATUS_TRANSITIONS[from].includes(to);
+  return TASK_TRANSITIONS[from].includes(to);
 }
 
-export function isTaskNodeTerminalStatus(status: TaskNodeStatus): boolean {
-  return TASK_NODE_TERMINAL_STATUSES.has(status);
+export function allowedTaskTransitions(from: TaskStatus): readonly TaskStatus[] {
+  return TASK_TRANSITIONS[from];
 }
 
-export function isTaskNodePendingStatus(status: TaskNodeStatus): boolean {
-  return TASK_NODE_PENDING_STATUSES.has(status);
+export function isTerminalTaskStatus(status: TaskStatus): boolean {
+  return (
+    status === "completed" || status === "failed" || status === "timeout" || status === "cancelled"
+  );
 }
 
-export function isTaskNodeFailureStatus(status: TaskNodeStatus): boolean {
-  return TASK_NODE_FAILURE_STATUSES.has(status);
-}
-
-export function canTransitionTaskNodeStatus(from: TaskNodeStatus, to: TaskNodeStatus): boolean {
-  if (from === to) {
-    return true;
+export function normalizeTaskProgress(progress?: number): number | undefined {
+  if (typeof progress !== "number" || !Number.isFinite(progress)) {
+    return undefined;
   }
-  return TASK_NODE_STATUS_TRANSITIONS[from].includes(to);
+  return Math.max(0, Math.min(100, Math.round(progress)));
 }

@@ -186,6 +186,15 @@ export const AgentDefaultsSchema = z
           .describe(
             "Maximum number of active children a single agent session can spawn (default: 5).",
           ),
+        maxActiveTasksPerSession: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .describe(
+            "Maximum number of active orchestrator tasks a requester session can track before rejecting new spawns (default: 5).",
+          ),
         archiveAfterMinutes: z.number().int().min(0).optional(),
         model: AgentModelSchema.optional(),
         thinking: z.string().optional(),

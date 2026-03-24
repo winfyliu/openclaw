@@ -83,6 +83,7 @@ export {
   buildFeishuConversationId,
   parseFeishuConversationId,
 } from "../../extensions/feishu/api.js";
+export { resolveTaskByRunId } from "../agents/task-registry.js";
 export {
   createWebhookAnomalyTracker,
   createFixedWindowRateLimiter,

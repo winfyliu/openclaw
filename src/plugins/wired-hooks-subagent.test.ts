@@ -111,6 +111,27 @@ describe("subagent hook runner methods", () => {
     expect(result).toBeUndefined();
   });
 
+  it("runSubagentCompletionVerification invokes registered verification hooks", async () => {
+    const handler = vi.fn(async () => ({ decision: "allow" as const }));
+    const registry = createMockPluginRegistry([
+      { hookName: "subagent_completion_verification", handler },
+    ]);
+    const runner = createHookRunner(registry);
+    const event = {
+      runId: "run-1",
+      taskId: "T-123",
+      title: "Verify completion",
+      childSessionKey: "agent:main:subagent:child",
+      requesterSessionKey: "agent:main:main",
+      outcome: "ok" as const,
+    };
+
+    const result = await runner.runSubagentCompletionVerification(event, baseSubagentCtx);
+
+    expect(handler).toHaveBeenCalledWith(event, baseSubagentCtx);
+    expect(result).toEqual({ decision: "allow" });
+  });
+
   it("runSubagentEnded invokes registered subagent_ended hooks", async () => {
     const handler = vi.fn();
     const registry = createMockPluginRegistry([{ hookName: "subagent_ended", handler }]);
@@ -139,7 +160,33 @@ describe("subagent hook runner methods", () => {
 
     expect(runner.hasHooks("subagent_spawning")).toBe(true);
     expect(runner.hasHooks("subagent_delivery_target")).toBe(true);
+    expect(runner.hasHooks("subagent_completion_verification")).toBe(false);
     expect(runner.hasHooks("subagent_spawned")).toBe(false);
     expect(runner.hasHooks("subagent_ended")).toBe(false);
+  });
+
+  it("runSubagentCompletionVerification merges reject over allow decisions", async () => {
+    const allowHandler = vi.fn(async () => ({ decision: "allow" as const }));
+    const rejectHandler = vi.fn(async () => ({
+      decision: "reject" as const,
+      reason: "checks failed",
+    }));
+    const registry = createMockPluginRegistry([
+      { hookName: "subagent_completion_verification", handler: allowHandler },
+      { hookName: "subagent_completion_verification", handler: rejectHandler },
+    ]);
+    const runner = createHookRunner(registry);
+
+    const result = await runner.runSubagentCompletionVerification(
+      {
+        runId: "run-verify",
+        outcome: "ok",
+      },
+      baseSubagentCtx,
+    );
+
+    expect(allowHandler).toHaveBeenCalledTimes(1);
+    expect(rejectHandler).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ decision: "reject", reason: "checks failed" });
   });
 });

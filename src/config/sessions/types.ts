@@ -48,6 +48,43 @@ export type SessionAcpMeta = {
   lastError?: string;
 };
 
+export type SessionTaskRuntimeEntry = {
+  taskId: string;
+  runId?: string;
+  childSessionKey?: string;
+  title: string;
+  status:
+    | "accepted"
+    | "planning"
+    | "executing"
+    | "evaluating"
+    | "completed"
+    | "failed"
+    | "timeout"
+    | "blocked"
+    | "cancelled";
+  progress?: number;
+  lastMessage?: string;
+  blockedReason?:
+    | "credentials"
+    | "permission"
+    | "missing_input"
+    | "external_dependency"
+    | "unknown";
+  blockedRequest?: string;
+  blockedAt?: number;
+  lastVersion: number;
+  lastEventId?: string;
+  createdAt: number;
+  updatedAt: number;
+  completedAt?: number;
+};
+
+export type SessionTaskRuntimeState = {
+  schemaVersion: number;
+  tasks: SessionTaskRuntimeEntry[];
+};
+
 export type AcpSessionRuntimeOptions = {
   /**
    * ACP runtime mode set via session/set_mode (for example: "plan", "normal", "auto").
@@ -183,6 +220,7 @@ export type SessionEntry = {
   skillsSnapshot?: SessionSkillSnapshot;
   systemPromptReport?: SessionSystemPromptReport;
   acp?: SessionAcpMeta;
+  taskOrchestrator?: SessionTaskRuntimeState;
 };
 
 function normalizeRuntimeField(value: string | undefined): string | undefined {

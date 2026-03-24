@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
 const diagnosticMocks = vi.hoisted(() => ({
   logMessageQueued: vi.fn(),
   logMessageProcessed: vi.fn(),
+  logMessageFirstAck: vi.fn(),
   logSessionStateChange: vi.fn(),
 }));
 const hookMocks = vi.hoisted(() => ({
@@ -144,6 +145,7 @@ vi.mock("./abort.runtime.js", () => ({
 vi.mock("../../logging/diagnostic.js", () => ({
   logMessageQueued: diagnosticMocks.logMessageQueued,
   logMessageProcessed: diagnosticMocks.logMessageProcessed,
+  logMessageFirstAck: diagnosticMocks.logMessageFirstAck,
   logSessionStateChange: diagnosticMocks.logSessionStateChange,
 }));
 vi.mock("../../config/sessions/store.js", async (importOriginal) => {
@@ -319,6 +321,7 @@ describe("dispatchReplyFromConfig", () => {
     acpMocks.listAcpSessionEntries.mockReset().mockResolvedValue([]);
     diagnosticMocks.logMessageQueued.mockClear();
     diagnosticMocks.logMessageProcessed.mockClear();
+    diagnosticMocks.logMessageFirstAck.mockClear();
     diagnosticMocks.logSessionStateChange.mockClear();
     hookMocks.runner.hasHooks.mockClear();
     hookMocks.runner.hasHooks.mockReturnValue(false);

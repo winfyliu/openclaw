@@ -59,6 +59,7 @@ import {
   restoreSubagentRunsFromDisk,
 } from "./subagent-registry-state.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
+import { markSubagentTaskOutcome } from "./task-orchestrator.js";
 import { resolveAgentTimeoutMs } from "./timeout.js";
 
 export type { SubagentRunRecord } from "./subagent-registry.types.js";
@@ -1448,6 +1449,11 @@ async function waitForSubagentCompletion(runId: string, waitTimeoutMs: number) {
         : wait.status === "timeout"
           ? { status: "timeout" }
           : { status: "ok" };
+    markSubagentTaskOutcome({
+      runId,
+      status: outcome.status,
+      error: outcome.status === "error" ? outcome.error : undefined,
+    });
     if (!runOutcomesEqual(entry.outcome, outcome)) {
       entry.outcome = outcome;
       mutated = true;

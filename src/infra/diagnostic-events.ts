@@ -82,6 +82,17 @@ export type DiagnosticMessageProcessedEvent = DiagnosticBaseEvent & {
   error?: string;
 };
 
+export type DiagnosticMessageFirstAckEvent = DiagnosticBaseEvent & {
+  type: "message.first_ack";
+  channel: string;
+  messageId?: number | string;
+  chatId?: number | string;
+  sessionKey?: string;
+  sessionId?: string;
+  ackLatencyMs: number;
+  reason?: string;
+};
+
 export type DiagnosticSessionStateEvent = DiagnosticBaseEvent & {
   type: "session.state";
   sessionKey?: string;
@@ -154,6 +165,7 @@ export type DiagnosticEventPayload =
   | DiagnosticWebhookErrorEvent
   | DiagnosticMessageQueuedEvent
   | DiagnosticMessageProcessedEvent
+  | DiagnosticMessageFirstAckEvent
   | DiagnosticSessionStateEvent
   | DiagnosticSessionStuckEvent
   | DiagnosticLaneEnqueueEvent

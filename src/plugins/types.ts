@@ -1421,6 +1421,7 @@ export type PluginHookName =
   | "session_end"
   | "subagent_spawning"
   | "subagent_delivery_target"
+  | "subagent_completion_verification"
   | "subagent_spawned"
   | "subagent_ended"
   | "gateway_start"
@@ -1448,6 +1449,7 @@ export const PLUGIN_HOOK_NAMES = [
   "session_end",
   "subagent_spawning",
   "subagent_delivery_target",
+  "subagent_completion_verification",
   "subagent_spawned",
   "subagent_ended",
   "gateway_start",
@@ -1864,9 +1866,33 @@ export type PluginHookSubagentDeliveryTargetResult = {
   };
 };
 
+// subagent_completion_verification hook
+export type PluginHookSubagentCompletionVerificationEvent = {
+  runId: string;
+  taskId?: string;
+  title?: string;
+  childSessionKey?: string;
+  requesterSessionKey?: string;
+  outcome: "ok" | "error" | "timeout" | "unknown";
+  error?: string;
+};
+
+export type PluginHookSubagentCompletionVerificationResult =
+  | {
+      decision: "allow";
+    }
+  | {
+      decision: "reject";
+      reason: string;
+    }
+  | {
+      decision: "skip";
+    };
+
 // subagent_spawned hook
 export type PluginHookSubagentSpawnedEvent = PluginHookSubagentSpawnBase & {
   runId: string;
+  taskId?: string;
 };
 
 // subagent_ended hook
@@ -1982,6 +2008,13 @@ export type PluginHookHandlerMap = {
   ) =>
     | Promise<PluginHookSubagentDeliveryTargetResult | void>
     | PluginHookSubagentDeliveryTargetResult
+    | void;
+  subagent_completion_verification: (
+    event: PluginHookSubagentCompletionVerificationEvent,
+    ctx: PluginHookSubagentContext,
+  ) =>
+    | Promise<PluginHookSubagentCompletionVerificationResult | void>
+    | PluginHookSubagentCompletionVerificationResult
     | void;
   subagent_spawned: (
     event: PluginHookSubagentSpawnedEvent,

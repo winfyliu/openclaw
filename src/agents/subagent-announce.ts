@@ -45,9 +45,10 @@ import {
   type SubagentAnnounceDeliveryResult,
 } from "./subagent-announce-dispatch.js";
 import { type AnnounceQueueItem, enqueueAnnounce } from "./subagent-announce-queue.js";
+import type { SubagentSessionRole } from "./subagent-capabilities.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import type { SpawnSubagentMode } from "./subagent-spawn.js";
-import { readLatestAssistantReply } from "./tools/agent-step.js";
+import { resolveTaskByIdOrRun } from "./task-registry.js";
 import { sanitizeTextContent, extractAssistantText } from "./tools/sessions-helpers.js";
 import { isAnnounceSkip } from "./tools/sessions-send-helpers.js";
 
@@ -1008,6 +1009,7 @@ export function buildSubagentSystemPrompt(params: {
   childSessionKey: string;
   label?: string;
   task?: string;
+  childRole?: SubagentSessionRole;
   /** Whether ACP-specific routing guidance should be included. Defaults to true. */
   acpEnabled?: boolean;
   /** Depth of the child being spawned (1 = sub-agent, 2 = sub-sub-agent). */
@@ -1024,8 +1026,11 @@ export function buildSubagentSystemPrompt(params: {
     typeof params.maxSpawnDepth === "number"
       ? params.maxSpawnDepth
       : DEFAULT_SUBAGENT_MAX_SPAWN_DEPTH;
+  const resolvedRole: SubagentSessionRole =
+    params.childRole ??
+    (childDepth <= 0 ? "main" : childDepth < maxSpawnDepth ? "orchestrator" : "leaf");
   const acpEnabled = params.acpEnabled !== false;
-  const canSpawn = childDepth < maxSpawnDepth;
+  const canSpawn = resolvedRole === "main" || resolvedRole === "orchestrator";
   const parentLabel = childDepth >= 2 ? "parent orchestrator" : "main agent";
 
   const lines = [
@@ -1035,16 +1040,27 @@ export function buildSubagentSystemPrompt(params: {
     "",
     "## Your Role",
     `- You were created to handle: ${taskText}`,
+    ...(resolvedRole === "orchestrator"
+      ? [
+          "- You are the planner-first coordinator: break work into plans, delegate when useful, then synthesize outcomes.",
+        ]
+      : resolvedRole === "leaf"
+        ? [
+            "- You are the executor-first specialist: execute scoped work directly and report concise findings back.",
+          ]
+        : ["- You are operating as the main coordinator for this task scope.".trim()]),
     "- Complete this task. That's your entire purpose.",
     `- You are NOT the ${parentLabel}. Don't try to be.`,
     "",
     "## Rules",
     "1. **Stay focused** - Do your assigned task, nothing else",
     `2. **Complete the task** - Your final message will be automatically reported to the ${parentLabel}`,
-    "3. **Don't initiate** - No heartbeats, no proactive actions, no side quests",
-    "4. **Be ephemeral** - You may be terminated after task completion. That's fine.",
-    "5. **Trust push-based completion** - Descendant results are auto-announced back to you; do not busy-poll for status.",
-    "6. **Recover from compacted/truncated tool output** - If you see `[compacted: tool output removed to free context]` or `[truncated: output exceeded context limit]`, assume prior output was reduced. Re-read only what you need using smaller chunks (`read` with offset/limit, or targeted `rg`/`head`/`tail`) instead of full-file `cat`.",
+    "3. **Plan before execution** - First produce a concise plan before you run tools or make changes.",
+    "4. **Evaluate before finishing** - After execution, verify whether the task is complete and call out remaining risks or missing input.",
+    "5. **Don't initiate** - No heartbeats, no proactive actions, no side quests",
+    "6. **Be ephemeral** - You may be terminated after task completion. That's fine.",
+    "7. **Trust push-based completion** - Descendant results are auto-announced back to you; do not busy-poll for status.",
+    "8. **Recover from compacted/truncated tool output** - If you see `[compacted: tool output removed to free context]` or `[truncated: output exceeded context limit]`, assume prior output was reduced. Re-read only what you need using smaller chunks (`read` with offset/limit, or targeted `rg`/`head`/`tail`) instead of full-file `cat`.",
     "",
     "## Output Format",
     "When complete, your final response should include:",
@@ -1087,7 +1103,7 @@ export function buildSubagentSystemPrompt(params: {
         : []),
       "",
     );
-  } else if (childDepth >= 2) {
+  } else if (resolvedRole === "leaf" && (params.childRole === "leaf" || childDepth >= 2)) {
     lines.push(
       "## Sub-Agent Spawning",
       "You are a leaf worker and CANNOT spawn further sub-agents. Focus on your assigned task.",
@@ -1484,6 +1500,11 @@ export async function runSubagentAnnounceFlow(params: {
       startedAt: params.startedAt,
       endedAt: params.endedAt,
     });
+    const trackedTask = resolveTaskByIdOrRun({
+      sessionKey: targetRequesterSessionKey,
+      runId: params.childRunId,
+    });
+
     const internalEvents: AgentInternalEvent[] = [
       {
         type: "task_completion",
@@ -1499,6 +1520,22 @@ export async function runSubagentAnnounceFlow(params: {
         replyInstruction,
       },
     ];
+    if (trackedTask?.taskId) {
+      internalEvents.push({
+        type: "task_progress",
+        taskId: trackedTask.taskId,
+        status:
+          outcome.status === "ok"
+            ? "completed"
+            : outcome.status === "timeout"
+              ? "timeout"
+              : outcome.status === "error"
+                ? "failed"
+                : "evaluating",
+        progress: outcome.status === "unknown" ? 90 : 100,
+        message: statusLabel,
+      });
+    }
     const triggerMessage = buildAnnounceSteerMessage(internalEvents);
 
     // Send to the requester session. For nested subagents this is an internal
