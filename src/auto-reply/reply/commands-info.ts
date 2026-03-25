@@ -325,8 +325,8 @@ export const handleTaskPrefsCommand: CommandHandler = async (params, allowTextCo
     `- planDiffRequired: ${prefs.planDiffRequired}`,
     "",
     "Approval Commands",
-    "- confirm: 确认执行 / confirm",
-    "- cancel: 取消执行 / cancel",
+    "- confirm: 确认执行 / confirm execute",
+    "- cancel: 取消执行 / cancel execute",
     "- replan: 重新规划: <要求>",
   ].join("\n");
   return { shouldContinue: false, reply: { text } };

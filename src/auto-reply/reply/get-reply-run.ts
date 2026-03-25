@@ -88,18 +88,16 @@ function isApprovalConfirmCommand(input: string): boolean {
   const normalized = input.trim().toLowerCase();
   return new Set([
     "确认执行",
-    "确认",
     "同意执行",
     "confirm",
     "confirm execute",
-    "approve",
-    "yes",
+    "approve execute",
   ]).has(normalized);
 }
 
 function isApprovalCancelCommand(input: string): boolean {
   const normalized = input.trim().toLowerCase();
-  return new Set(["取消执行", "取消", "cancel", "reject", "no"]).has(normalized);
+  return new Set(["取消执行", "cancel execute"]).has(normalized);
 }
 
 function parseApprovalReplanCommand(input: string): string | undefined {
@@ -126,6 +124,23 @@ function explainApprovalReason(reason?: string): string {
     default:
       return "该任务命中审批策略";
   }
+}
+
+function resolveApprovalReasonFromTaskRoute(reasonShort: string, body: string): string {
+  if (reasonShort === "task_keywords") {
+    return "task_keywords";
+  }
+  if (reasonShort === "media_present") {
+    return "media_present";
+  }
+  const normalized = body.trim().toLowerCase();
+  if (/发送|推送|写入|创建|删除|更新线上|调用接口|发消息|post|webhook|publish|send|write|create|delete|update/.test(normalized)) {
+    return "external_side_effect";
+  }
+  if (/全量测试|跑全部测试|覆盖率|长时间|benchmark|load test|full test|test:coverage|pnpm test/.test(normalized)) {
+    return "costly_operation";
+  }
+  return reasonShort || "policy_gate";
 }
 
 function logApprovalEvent(params: {
@@ -476,6 +491,10 @@ export async function runPreparedReply(
           store[sessionKey] = {
             ...existing,
             pendingTaskApprovalBody: approvalReplanBody,
+            pendingTaskApprovalReason: resolveApprovalReasonFromTaskRoute(
+              existing.pendingTaskApprovalReason ?? "policy_gate",
+              approvalReplanBody,
+            ),
             pendingTaskApprovalRequestedAt: Date.now(),
             updatedAt: Date.now(),
           };
@@ -596,7 +615,10 @@ export async function runPreparedReply(
       store[sessionKey] = {
         ...existing,
         pendingTaskApprovalBody: baseBodyTrimmedRaw,
-        pendingTaskApprovalReason: taskRouteDecision.reasonShort,
+        pendingTaskApprovalReason: resolveApprovalReasonFromTaskRoute(
+          taskRouteDecision.reasonShort,
+          baseBodyTrimmedRaw,
+        ),
         pendingTaskApprovalRequestedAt: requestedAt,
         updatedAt: requestedAt,
       };

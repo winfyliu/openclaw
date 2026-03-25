@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { BARE_SESSION_RESET_PROMPT } from "../../auto-reply/reply/session-reset-prompt.js";
 import { agentHandlers } from "./agent.js";
 import type { GatewayRequestContext } from "./types.js";
+import { validateAgentParams } from "../protocol/index.js";
 
 const mocks = vi.hoisted(() => ({
   loadSessionEntry: vi.fn(),
@@ -691,6 +692,25 @@ describe("gateway agent handler", () => {
         message: expect.stringContaining("invalid agent params"),
       }),
     );
+  });
+
+  it("schema validator accepts task_plan internal event shape", () => {
+    const ok = validateAgentParams({
+      message: "schema check",
+      sessionKey: "agent:main:main",
+      internalEvents: [
+        {
+          type: "task_plan",
+          childSessionKey: "agent:main:subagent:test-child",
+          taskLabel: "schema check task",
+          plan: "1) plan\n2) execute",
+          complexity: "medium",
+          confidence: 0.75,
+        },
+      ],
+      idempotencyKey: "schema-check-task-plan",
+    });
+    expect(ok).toBe(true);
   });
 
   it("only forwards workspaceDir for spawned sessions with stored workspace inheritance", async () => {
