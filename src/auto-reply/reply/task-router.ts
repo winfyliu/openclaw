@@ -95,10 +95,13 @@ export function decideTaskRoute(params: {
     };
   }
 
+  const externalEffectIntent = hasExternalSideEffectIntent(text);
+  const costlyOpsIntent = hasCostlyOpsIntent(text);
+
   const taskLike =
-    /安装|部署|迁移|修复|排查|重构|实现|编写|执行|run|build|deploy|install|fix|debug|refactor|implement|write/.test(
-      text,
-    );
+    /安装|部署|迁移|修复|排查|重构|实现|编写|执行|run|build|deploy|install|fix|debug|refactor|implement|write/.test(text) ||
+    externalEffectIntent ||
+    costlyOpsIntent;
   if (!taskLike && text.length <= 120) {
     return {
       path: "fast_qa",
@@ -117,10 +120,10 @@ export function decideTaskRoute(params: {
     (params.policies?.planApprovalMode === "risk_based" &&
       (complexity === "high" || params.policies?.riskyOps === true));
   const needsPlanApprovalByExternalEffect = Boolean(
-    params.policies?.externalSideEffectsApproval && hasExternalSideEffectIntent(text),
+    params.policies?.externalSideEffectsApproval && externalEffectIntent,
   );
   const needsPlanApprovalByCostlyOps = Boolean(
-    params.policies?.costlyOpsApproval && hasCostlyOpsIntent(text),
+    params.policies?.costlyOpsApproval && costlyOpsIntent,
   );
   const needsPlanApproval =
     needsPlanApprovalByText ||

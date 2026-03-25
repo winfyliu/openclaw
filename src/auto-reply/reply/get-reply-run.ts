@@ -402,7 +402,8 @@ export async function runPreparedReply(
   // Use CommandBody/RawBody for bare reset detection (clean message without structural context).
   const rawBodyTrimmed = (ctx.CommandBody ?? ctx.RawBody ?? ctx.Body ?? "").trim();
   const baseBodyTrimmedRaw = baseBody.trim();
-  const isWholeMessageCommand = command.commandBodyNormalized.trim() === rawBodyTrimmed;
+  const normalizedCommandBody = (command.commandBodyNormalized ?? "").trim();
+  const isWholeMessageCommand = normalizedCommandBody === rawBodyTrimmed;
   const isResetOrNewCommand = /^\/(new|reset)(?:\s|$)/.test(rawBodyTrimmed);
   if (
     allowTextCommands &&
