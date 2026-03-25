@@ -157,9 +157,6 @@ export function readRecentTaskApprovalEvents(limit = 200): TaskApprovalEvent[] {
 }
 
 export function summarizeTaskApprovalEvents(events: TaskApprovalEvent[]): string {
-  if (events.length === 0) {
-    return "No approval events recorded yet.";
-  }
   const counts = {
     requested: 0,
     confirmed: 0,
