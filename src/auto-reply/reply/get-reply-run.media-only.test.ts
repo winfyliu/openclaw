@@ -93,6 +93,7 @@ import { runReplyAgent } from "./agent-runner.runtime.js";
 import { routeReply } from "./route-reply.runtime.js";
 import { drainFormattedSystemEvents } from "./session-system-events.js";
 import { resolveTypingMode } from "./typing-mode.js";
+import { updateSessionStore } from "../../config/sessions/store.js";
 
 function baseParams(
   overrides: Partial<Parameters<typeof runPreparedReply>[0]> = {},
@@ -405,5 +406,44 @@ describe("runPreparedReply media-only handling", () => {
     expect(call).toBeTruthy();
     // Queue body (used by steer mode) must keep the full original text.
     expect(call?.followupRun.prompt).toContain("low steer this conversation");
+  });
+
+  it("does not re-enter approval gate after confirm", async () => {
+    await runPreparedReply(
+      baseParams({
+        ctx: {
+          Body: "确认执行",
+          RawBody: "确认执行",
+          CommandBody: "确认执行",
+          ThreadHistoryBody: "Earlier message in this thread",
+          OriginatingChannel: "slack",
+          OriginatingTo: "C123",
+          ChatType: "group",
+        },
+        sessionCtx: {
+          Body: "确认执行",
+          BodyStripped: "确认执行",
+          ThreadHistoryBody: "Earlier message in this thread",
+          Provider: "slack",
+          ChatType: "group",
+          OriginatingChannel: "slack",
+          OriginatingTo: "C123",
+        },
+        sessionEntry: {
+          sessionId: "s1",
+          updatedAt: Date.now(),
+          pendingTaskApprovalBody: "帮我安装 skillhub 并验证",
+          pendingTaskApprovalReason: "task_keywords",
+        },
+        storePath: "/tmp/store.json",
+      }),
+    );
+
+    const called = vi.mocked(updateSessionStore).mock.calls;
+    // Confirm path should clear pending state once, and should not write a new pending approval.
+    expect(called.length).toBeGreaterThanOrEqual(1);
+    const call = vi.mocked(runReplyAgent).mock.calls[0]?.[0];
+    expect(call).toBeTruthy();
+    expect(call?.commandBody).toContain("帮我安装 skillhub 并验证");
   });
 });

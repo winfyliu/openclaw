@@ -8,6 +8,7 @@ import {
   toolExecutionErrorResult,
   unknownToolActionResult,
 } from "./tool-result.js";
+import { logRegisterOnce } from "./register-log-once.js";
 
 // ============ Actions ============
 
@@ -224,5 +225,9 @@ export function registerFeishuDriveTools(api: OpenClawPluginApi) {
     { name: "feishu_drive" },
   );
 
-  api.logger.info?.(`feishu_drive: Registered feishu_drive tool`);
+  logRegisterOnce(
+    api.logger.info?.bind(api.logger),
+    "feishu_drive",
+    "feishu_drive: Registered feishu_drive tool",
+  );
 }

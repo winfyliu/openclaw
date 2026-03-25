@@ -31,7 +31,7 @@ import { isCronSessionKey, isSubagentSessionKey } from "../../../routing/session
 import { joinPresentTextSegments } from "../../../shared/text/join-segments.js";
 import { buildTtsSystemPromptHint } from "../../../tts/tts.js";
 import { resolveUserPath } from "../../../utils.js";
-import { normalizeMessageChannel } from "../../../utils/message-channel.js";
+import { isDeliverableMessageChannel, normalizeMessageChannel } from "../../../utils/message-channel.js";
 import { isReasoningTagProvider } from "../../../utils/provider-utils.js";
 import { resolveOpenClawAgentDir } from "../../agent-paths.js";
 import { resolveSessionAgentIds } from "../../agent-scope.js";
@@ -170,6 +170,55 @@ type PromptBuildHookRunner = {
 const SESSIONS_YIELD_INTERRUPT_CUSTOM_TYPE = "openclaw.sessions_yield_interrupt";
 const SESSIONS_YIELD_CONTEXT_CUSTOM_TYPE = "openclaw.sessions_yield";
 const SESSIONS_YIELD_ABORT_SETTLE_TIMEOUT_MS = process.env.OPENCLAW_TEST_FAST === "1" ? 250 : 2_000;
+const IM_FAST_PROMPT_MAX_CHARS = 64;
+const IM_FAST_COMPACTION_RETRY_TIMEOUT_MS = 4_000;
+
+function isLikelyImFastPrompt(prompt?: string): boolean {
+  const text = prompt?.trim();
+  if (!text) {
+    return false;
+  }
+  if (text.length > IM_FAST_PROMPT_MAX_CHARS) {
+    return false;
+  }
+  if (/[\n`{}\[\]()]/.test(text)) {
+    return false;
+  }
+  const taskLike = /\b(install|deploy|fix|debug|build|test|plan|refactor|run)\b|安装|部署|修复|排查|构建|测试|规划|重构|执行/.test(
+    text.toLowerCase(),
+  );
+  return !taskLike;
+}
+
+function shouldUseImFastPath(params: {
+  messageProvider?: string;
+  prompt?: string;
+  trigger?: string;
+}): boolean {
+  const channel = normalizeMessageChannel(params.messageProvider);
+  if (!channel || !isDeliverableMessageChannel(channel)) {
+    return false;
+  }
+  if (params.trigger === "cron" || params.trigger === "heartbeat") {
+    return false;
+  }
+  return isLikelyImFastPrompt(params.prompt);
+}
+
+function resolveImFastPathReason(params: {
+  messageProvider?: string;
+  prompt?: string;
+  trigger?: string;
+}): string {
+  const channel = normalizeMessageChannel(params.messageProvider);
+  if (!channel || !isDeliverableMessageChannel(channel)) {
+    return "not_deliverable_channel";
+  }
+  if (params.trigger === "cron" || params.trigger === "heartbeat") {
+    return "background_trigger";
+  }
+  return isLikelyImFastPrompt(params.prompt) ? "short_non_task_prompt" : "non_fast_prompt";
+}
 
 // Persist a hidden context reminder so the next turn knows why the runner stopped.
 export function buildSessionsYieldContextMessage(message: string): string {
@@ -2721,6 +2770,23 @@ export async function runEmbeddedAttempt(
       let promptError: unknown = null;
       let promptErrorSource: "prompt" | "compaction" | null = null;
       const prePromptMessageCount = activeSession.messages.length;
+      const imFastPath = shouldUseImFastPath({
+        messageProvider: params.messageProvider,
+        prompt: params.prompt,
+        trigger: params.trigger,
+      });
+      const imFastPathReason = resolveImFastPathReason({
+        messageProvider: params.messageProvider,
+        prompt: params.prompt,
+        trigger: params.trigger,
+      });
+      const attemptWallStartedAt = Date.now();
+      const stageMs: {
+        hooks?: number;
+        llm?: number;
+        compactionWait?: number;
+        afterTurn?: number;
+      } = {};
       try {
         const promptStartedAt = Date.now();
 
@@ -2742,6 +2808,7 @@ export async function runEmbeddedAttempt(
           trigger: params.trigger,
           channelId: params.messageChannel ?? params.messageProvider ?? undefined,
         };
+        const hookStartedAt = Date.now();
         const hookResult = await resolvePromptBuildHookResult({
           prompt: params.prompt,
           messages: activeSession.messages,
@@ -2749,6 +2816,7 @@ export async function runEmbeddedAttempt(
           hookRunner,
           legacyBeforeAgentStartResult: params.legacyBeforeAgentStartResult,
         });
+        stageMs.hooks = Date.now() - hookStartedAt;
         {
           if (hookResult?.prependContext) {
             effectivePrompt = `${hookResult.prependContext}\n\n${effectivePrompt}`;
@@ -2894,6 +2962,7 @@ export async function runEmbeddedAttempt(
           } else {
             await abortable(activeSession.prompt(effectivePrompt));
           }
+          stageMs.llm = Date.now() - promptStartedAt;
         } catch (err) {
           // Yield-triggered abort is intentional — treat as clean stop, not error.
           // Check the abort reason to distinguish from external aborts (timeout, user cancel)
@@ -2935,7 +3004,9 @@ export async function runEmbeddedAttempt(
         // Only trust snapshot if compaction wasn't running before or after capture
         const preCompactionSnapshot = wasCompactingBefore || wasCompactingAfter ? null : snapshot;
         const preCompactionSessionId = activeSession.sessionId;
-        const COMPACTION_RETRY_AGGREGATE_TIMEOUT_MS = 60_000;
+        const COMPACTION_RETRY_AGGREGATE_TIMEOUT_MS = imFastPath
+          ? IM_FAST_COMPACTION_RETRY_TIMEOUT_MS
+          : 60_000;
 
         try {
           // Flush buffered block replies before waiting for compaction so the
@@ -2948,7 +3019,10 @@ export async function runEmbeddedAttempt(
 
           // Skip compaction wait when yield aborted the run — the signal is
           // already tripped and abortable() would immediately reject.
-          const compactionRetryWait = yieldAborted
+          const compactionWaitStartedAt = Date.now();
+          const compactionRetryWait = imFastPath
+            ? { timedOut: false }
+            : yieldAborted
             ? { timedOut: false }
             : await waitForCompactionRetryWithAggregateTimeout({
                 waitForCompactionRetry,
@@ -2956,6 +3030,7 @@ export async function runEmbeddedAttempt(
                 aggregateTimeoutMs: COMPACTION_RETRY_AGGREGATE_TIMEOUT_MS,
                 isCompactionStillInFlight: isCompactionInFlight,
               });
+          stageMs.compactionWait = Date.now() - compactionWaitStartedAt;
           if (compactionRetryWait.timedOut) {
             timedOutDuringCompaction = true;
             if (!isProbeSession) {
@@ -3041,6 +3116,7 @@ export async function runEmbeddedAttempt(
 
         // Let the active context engine run its post-turn lifecycle.
         if (params.contextEngine) {
+          const afterTurnStartedAt = Date.now();
           const afterTurnRuntimeContext = buildAfterTurnRuntimeContext({
             attempt: params,
             workspaceDir: effectiveWorkspace,
@@ -3106,6 +3182,14 @@ export async function runEmbeddedAttempt(
               runtimeContext: afterTurnRuntimeContext,
             });
           }
+          stageMs.afterTurn = Date.now() - afterTurnStartedAt;
+        }
+
+        if (!isProbeSession) {
+          const wallMs = Date.now() - attemptWallStartedAt;
+          log.info(
+            `run timing: runId=${params.runId} sessionId=${params.sessionId} channel=${params.messageProvider ?? "unknown"} fastPath=${imFastPath} fastPathReason=${imFastPathReason} wallMs=${wallMs} hooksMs=${stageMs.hooks ?? 0} llmMs=${stageMs.llm ?? 0} compactionWaitMs=${stageMs.compactionWait ?? 0} afterTurnMs=${stageMs.afterTurn ?? 0}`,
+          );
         }
 
         cacheTrace?.recordStage("session:after", {

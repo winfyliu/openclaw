@@ -2,6 +2,7 @@ import type * as Lark from "@larksuiteoapi/node-sdk";
 import { Type } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "../runtime-api.js";
 import { listEnabledFeishuAccounts } from "./accounts.js";
+import { logRegisterOnce } from "./register-log-once.js";
 import { createFeishuToolClient } from "./tool-account.js";
 
 // ============ Helpers ============
@@ -721,5 +722,9 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     },
   });
 
-  api.logger.info?.("feishu_bitable: Registered bitable tools");
+  logRegisterOnce(
+    api.logger.info?.bind(api.logger),
+    "feishu_bitable",
+    "feishu_bitable: Registered bitable tools",
+  );
 }

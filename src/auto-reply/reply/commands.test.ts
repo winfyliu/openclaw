@@ -576,6 +576,45 @@ describe("status aliases for token usage", () => {
   });
 });
 
+describe("/task-prefs command", () => {
+  it("returns current task preferences", async () => {
+    const cfg = {
+      commands: { text: true },
+      channels: { whatsapp: { allowFrom: ["*"] } },
+    } as OpenClawConfig;
+    const params = buildParams("/task-prefs", cfg);
+
+    const result = await handleCommands(params);
+    expect(result.shouldContinue).toBe(false);
+    expect(result.reply?.text).toContain("Task Preferences");
+    expect(result.reply?.text).toContain("planApprovalMode");
+  });
+
+  it("resets task preferences", async () => {
+    const cfg = {
+      commands: { text: true },
+      channels: { whatsapp: { allowFrom: ["*"] } },
+    } as OpenClawConfig;
+    const params = buildParams("/task-prefs reset", cfg);
+
+    const result = await handleCommands(params);
+    expect(result.shouldContinue).toBe(false);
+    expect(result.reply?.text).toContain("Task preferences reset");
+  });
+
+  it("shows task approval stats", async () => {
+    const cfg = {
+      commands: { text: true },
+      channels: { whatsapp: { allowFrom: ["*"] } },
+    } as OpenClawConfig;
+    const params = buildParams("/task-prefs stats", cfg);
+
+    const result = await handleCommands(params);
+    expect(result.shouldContinue).toBe(false);
+    expect(result.reply?.text).toContain("Task Approval Stats");
+  });
+});
+
 describe("/compact command", () => {
   beforeEach(() => {
     vi.clearAllMocks();

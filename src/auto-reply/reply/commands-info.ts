@@ -8,6 +8,12 @@ import {
 import { buildContextReply } from "./commands-context-report.js";
 import { buildExportSessionReply } from "./commands-export-session.js";
 import { buildStatusReply } from "./commands-status.js";
+import {
+  readRecentTaskApprovalEvents,
+  readTaskPolicies,
+  summarizeTaskApprovalEvents,
+  writeTaskPolicies,
+} from "./task-policies.js";
 import type { CommandHandler } from "./commands-types.js";
 
 export const handleHelpCommand: CommandHandler = async (params, allowTextCommands) => {
@@ -258,4 +264,70 @@ export const handleWhoamiCommand: CommandHandler = async (params, allowTextComma
     lines.push(`AllowFrom: ${senderId}`);
   }
   return { shouldContinue: false, reply: { text: lines.join("\n") } };
+};
+
+export const handleTaskPrefsCommand: CommandHandler = async (params, allowTextCommands) => {
+  if (!allowTextCommands) {
+    return null;
+  }
+  const normalized = params.command.commandBodyNormalized.trim();
+  if (
+    normalized !== "/task-prefs" &&
+    normalized !== "/task-prefs reset" &&
+    normalized !== "/task-prefs stats"
+  ) {
+    return null;
+  }
+  if (!params.command.isAuthorizedSender) {
+    logVerbose(
+      `Ignoring /task-prefs from unauthorized sender: ${params.command.senderId || "<unknown>"}`,
+    );
+    return { shouldContinue: false };
+  }
+  if (normalized === "/task-prefs reset") {
+    const next = writeTaskPolicies((current) => ({
+      ...current,
+      planApprovalMode: "auto_execute",
+      riskApprovalRequired: true,
+      externalSideEffectsApproval: true,
+      costlyOpsApproval: false,
+      allowBackgroundExecution: true,
+      interruptPolicy: "cancel_and_replan",
+      progressVerbosity: "normal",
+      finalResponseStyle: "brief",
+      failureHandling: "ask_user",
+      planDiffRequired: false,
+    }));
+    return {
+      shouldContinue: false,
+      reply: { text: `Task preferences reset. planApprovalMode=${next.planApprovalMode}` },
+    };
+  }
+  if (normalized === "/task-prefs stats") {
+    const events = readRecentTaskApprovalEvents(200);
+    return {
+      shouldContinue: false,
+      reply: { text: summarizeTaskApprovalEvents(events) },
+    };
+  }
+  const prefs = readTaskPolicies();
+  const text = [
+    "Task Preferences",
+    `- planApprovalMode: ${prefs.planApprovalMode}`,
+    `- riskApprovalRequired: ${prefs.riskApprovalRequired}`,
+    `- externalSideEffectsApproval: ${prefs.externalSideEffectsApproval}`,
+    `- costlyOpsApproval: ${prefs.costlyOpsApproval}`,
+    `- allowBackgroundExecution: ${prefs.allowBackgroundExecution}`,
+    `- interruptPolicy: ${prefs.interruptPolicy}`,
+    `- progressVerbosity: ${prefs.progressVerbosity}`,
+    `- finalResponseStyle: ${prefs.finalResponseStyle}`,
+    `- failureHandling: ${prefs.failureHandling}`,
+    `- planDiffRequired: ${prefs.planDiffRequired}`,
+    "",
+    "Approval Commands",
+    "- confirm: 确认执行 / confirm",
+    "- cancel: 取消执行 / cancel",
+    "- replan: 重新规划: <要求>",
+  ].join("\n");
+  return { shouldContinue: false, reply: { text } };
 };

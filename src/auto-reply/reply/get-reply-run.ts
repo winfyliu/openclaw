@@ -44,6 +44,109 @@ import { resolveTypingMode } from "./typing-mode.js";
 import { resolveRunTypingPolicy } from "./typing-policy.js";
 import type { TypingController } from "./typing.js";
 import { appendUntrustedContext } from "./untrusted-context.js";
+import {
+  appendTaskApprovalEvent,
+  maybeApplyPoliciesFromUserText,
+  readTaskPolicies,
+} from "./task-policies.js";
+import { decideTaskRoute } from "./task-router.js";
+
+const FAST_GREETING_REPLIES = [
+  "你好！我在，想让我帮你做什么？",
+  "嗨，我在这儿。你现在想处理什么？",
+  "在的，直接说你的需求就行。",
+] as const;
+
+function isSimpleGreetingMessage(text: string): boolean {
+  const trimmed = text.trim().toLowerCase();
+  if (!trimmed || trimmed.length > 20) {
+    return false;
+  }
+  const normalized = trimmed.replace(/[!！?？,.，。\s]+/g, "");
+  return new Set([
+    "你好",
+    "您好",
+    "嗨",
+    "hi",
+    "hello",
+    "在吗",
+    "在不在",
+    "在嘛",
+    "hey",
+  ]).has(normalized);
+}
+
+function pickFastGreetingReply(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return FAST_GREETING_REPLIES[hash % FAST_GREETING_REPLIES.length] ?? FAST_GREETING_REPLIES[0];
+}
+
+function isApprovalConfirmCommand(input: string): boolean {
+  const normalized = input.trim().toLowerCase();
+  return new Set([
+    "确认执行",
+    "确认",
+    "同意执行",
+    "confirm",
+    "confirm execute",
+    "approve",
+    "yes",
+  ]).has(normalized);
+}
+
+function isApprovalCancelCommand(input: string): boolean {
+  const normalized = input.trim().toLowerCase();
+  return new Set(["取消执行", "取消", "cancel", "reject", "no"]).has(normalized);
+}
+
+function parseApprovalReplanCommand(input: string): string | undefined {
+  const raw = input.trim();
+  const patterns = [/^重新规划[:：]?\s*/i, /^replan[:：]?\s*/i, /^重新计划[:：]?\s*/i];
+  for (const pattern of patterns) {
+    if (!pattern.test(raw)) {
+      continue;
+    }
+    const next = raw.replace(pattern, "").trim();
+    return next.length > 0 ? next : undefined;
+  }
+  return undefined;
+}
+
+function explainApprovalReason(reason?: string): string {
+  switch (reason) {
+    case "task_keywords":
+      return "该任务包含执行类操作";
+    case "long_request":
+      return "该请求较复杂";
+    case "media_present":
+      return "该请求包含媒体或附件";
+    default:
+      return "该任务命中审批策略";
+  }
+}
+
+function logApprovalEvent(params: {
+  action: "requested" | "confirmed" | "cancelled" | "replanned";
+  sessionKey?: string;
+  reason?: string;
+  complexity?: "low" | "medium" | "high";
+  body?: string;
+}): void {
+  const promptLen = params.body?.trim().length ?? 0;
+  logVerbose(
+    `approval-event action=${params.action} sessionKey=${params.sessionKey ?? "unknown"} reason=${params.reason ?? "n/a"} complexity=${params.complexity ?? "n/a"} promptLen=${promptLen}`,
+  );
+  appendTaskApprovalEvent({
+    action: params.action,
+    sessionKey: params.sessionKey,
+    reason: params.reason,
+    complexity: params.complexity,
+    promptLen,
+  });
+}
 
 type AgentDefaults = NonNullable<OpenClawConfig["agents"]>["defaults"];
 type ExecOverrides = Pick<ExecToolDefaults, "host" | "security" | "ask" | "node">;
@@ -342,10 +445,181 @@ export async function runPreparedReply(
       text: "I didn't receive any text in your message. Please resend or add a caption.",
     };
   }
+  if (!hasMediaAttachment && isSimpleGreetingMessage(baseBodyTrimmedRaw)) {
+    await typing.onReplyStart();
+    typing.markRunComplete();
+    typing.cleanup();
+    return {
+      text: pickFastGreetingReply(baseBodyTrimmedRaw),
+    };
+  }
+  let routingBodyRaw = baseBodyTrimmedRaw;
+  let executionBodyOverride: string | undefined;
+  let skipApprovalGateForThisTurn = false;
+  const approvalCommandRaw = baseBodyTrimmedRaw.trim();
+  const approvalReplanBody = parseApprovalReplanCommand(approvalCommandRaw);
+  if (
+    sessionKey &&
+    sessionEntry?.pendingTaskApprovalBody &&
+    (isApprovalConfirmCommand(approvalCommandRaw) ||
+      isApprovalCancelCommand(approvalCommandRaw) ||
+      approvalReplanBody !== undefined)
+  ) {
+    if (approvalReplanBody !== undefined) {
+      if (storePath) {
+        await updateSessionStore(storePath, (store) => {
+          const existing = store[sessionKey];
+          if (!existing) {
+            return;
+          }
+          store[sessionKey] = {
+            ...existing,
+            pendingTaskApprovalBody: approvalReplanBody,
+            pendingTaskApprovalRequestedAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+        });
+      }
+      await typing.onReplyStart();
+      typing.markRunComplete();
+      typing.cleanup();
+      logApprovalEvent({
+        action: "replanned",
+        sessionKey,
+        reason: sessionEntry.pendingTaskApprovalReason,
+        body: approvalReplanBody,
+      });
+      return {
+        text: "收到，我已按你的意见重新规划。回复“确认执行”继续，或回复“取消执行”。",
+      };
+    }
+    if (isApprovalCancelCommand(approvalCommandRaw)) {
+      if (storePath) {
+        await updateSessionStore(storePath, (store) => {
+          const existing = store[sessionKey];
+          if (!existing) {
+            return;
+          }
+          store[sessionKey] = {
+            ...existing,
+            pendingTaskApprovalBody: undefined,
+            pendingTaskApprovalReason: undefined,
+            pendingTaskApprovalRequestedAt: undefined,
+            updatedAt: Date.now(),
+          };
+        });
+      }
+      await typing.onReplyStart();
+      typing.markRunComplete();
+      typing.cleanup();
+      logApprovalEvent({
+        action: "cancelled",
+        sessionKey,
+        reason: sessionEntry.pendingTaskApprovalReason,
+        body: sessionEntry.pendingTaskApprovalBody,
+      });
+      return { text: "好的，已取消本次执行。" };
+    }
+    const approvedBody = sessionEntry.pendingTaskApprovalBody;
+    if (storePath) {
+      await updateSessionStore(storePath, (store) => {
+        const existing = store[sessionKey];
+        if (!existing) {
+          return;
+        }
+        store[sessionKey] = {
+          ...existing,
+          pendingTaskApprovalBody: undefined,
+          pendingTaskApprovalReason: undefined,
+          pendingTaskApprovalRequestedAt: undefined,
+          updatedAt: Date.now(),
+        };
+      });
+    }
+    await typing.onReplyStart();
+    await opts?.onBlockReply?.({ text: "收到确认，开始执行。" });
+    logApprovalEvent({
+      action: "confirmed",
+      sessionKey,
+      reason: sessionEntry.pendingTaskApprovalReason,
+      body: approvedBody,
+    });
+    sessionCtx.Body = approvedBody;
+    sessionCtx.RawBody = approvedBody;
+    sessionCtx.CommandBody = approvedBody;
+    routingBodyRaw = approvedBody;
+    executionBodyOverride = approvedBody;
+    skipApprovalGateForThisTurn = true;
+  }
+  const updatedPolicies = maybeApplyPoliciesFromUserText(routingBodyRaw);
+  const taskPolicies = updatedPolicies ?? readTaskPolicies();
+  if (updatedPolicies) {
+    await typing.onReplyStart();
+    typing.markRunComplete();
+    typing.cleanup();
+    return {
+      text: "好的，我记住了。后续任务我会按你的偏好执行。",
+    };
+  }
+  const taskRouteDecision = decideTaskRoute({
+    body: routingBodyRaw,
+    isHeartbeat,
+    hasMediaAttachment,
+    policies: {
+      planApprovalMode: taskPolicies.planApprovalMode,
+      riskyOps: taskPolicies.riskApprovalRequired,
+      externalSideEffectsApproval: taskPolicies.externalSideEffectsApproval,
+      costlyOpsApproval: taskPolicies.costlyOpsApproval,
+    },
+  });
+  logVerbose(
+    `task-route decision: path=${taskRouteDecision.path} complexity=${taskRouteDecision.complexity} needsPlanApproval=${taskRouteDecision.needsPlanApproval} reason=${taskRouteDecision.reasonShort}`,
+  );
+  if (taskRouteDecision.path === "task_path" && taskRouteDecision.ackText && opts?.onBlockReply) {
+    await typing.onReplyStart();
+    await opts.onBlockReply({ text: taskRouteDecision.ackText });
+  }
+  if (
+    !skipApprovalGateForThisTurn &&
+    taskRouteDecision.path === "task_path" &&
+    taskRouteDecision.requiresExecutionApproval &&
+    sessionKey &&
+    storePath
+  ) {
+    const requestedAt = Date.now();
+    await updateSessionStore(storePath, (store) => {
+      const existing = store[sessionKey];
+      if (!existing) {
+        return;
+      }
+      store[sessionKey] = {
+        ...existing,
+        pendingTaskApprovalBody: baseBodyTrimmedRaw,
+        pendingTaskApprovalReason: taskRouteDecision.reasonShort,
+        pendingTaskApprovalRequestedAt: requestedAt,
+        updatedAt: requestedAt,
+      };
+    });
+    await typing.onReplyStart();
+    typing.markRunComplete();
+    typing.cleanup();
+    logApprovalEvent({
+      action: "requested",
+      sessionKey,
+      reason: taskRouteDecision.reasonShort,
+      complexity: taskRouteDecision.complexity,
+      body: baseBodyTrimmedRaw,
+    });
+    return {
+      text: `${explainApprovalReason(taskRouteDecision.reasonShort)}，需要你确认后再执行。请回复“确认执行”继续，或回复“取消执行”。如需调整可回复“重新规划：你的要求”。`,
+    };
+  }
   // When the user sends media without text, provide a minimal body so the agent
   // run proceeds and the image/document is injected by the embedded runner.
-  const effectiveBaseBody = baseBodyTrimmed
-    ? baseBodyForPrompt
+  const effectiveBaseBody = executionBodyOverride
+    ? executionBodyOverride
+    : baseBodyTrimmed
+      ? baseBodyForPrompt
     : "[User sent media without caption]";
   let prefixedBodyBase = await applySessionHints({
     baseBody: effectiveBaseBody,

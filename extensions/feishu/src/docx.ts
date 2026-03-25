@@ -23,6 +23,7 @@ import {
   resolveAnyEnabledFeishuToolsConfig,
   resolveFeishuToolAccount,
 } from "./tool-account.js";
+import { logRegisterOnce } from "./register-log-once.js";
 
 // ============ Helpers ============
 
@@ -1455,6 +1456,11 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
   }
 
   if (registered.length > 0) {
-    api.logger.info?.(`feishu_doc: Registered ${registered.join(", ")}`);
+    const registeredLabel = registered.join(", ");
+    logRegisterOnce(
+      api.logger.info?.bind(api.logger),
+      `feishu_doc:${registeredLabel}`,
+      `feishu_doc: Registered ${registeredLabel}`,
+    );
   }
 }

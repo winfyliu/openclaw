@@ -190,6 +190,12 @@ export type SessionEntry = {
   cacheWrite?: number;
   modelProvider?: string;
   model?: string;
+  /** Pending task body waiting for explicit user approval before execution. */
+  pendingTaskApprovalBody?: string;
+  /** Optional reason why approval is required for the pending task. */
+  pendingTaskApprovalReason?: string;
+  /** Timestamp when pending task approval was requested. */
+  pendingTaskApprovalRequestedAt?: number;
   /**
    * Last selected/runtime model pair for which a fallback notice was emitted.
    * Used to avoid repeating the same fallback notice every turn.

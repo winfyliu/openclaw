@@ -3,6 +3,7 @@ import type { OpenClawPluginApi } from "../runtime-api.js";
 import { listEnabledFeishuAccounts } from "./accounts.js";
 import { FeishuChatSchema, type FeishuChatParams } from "./chat-schema.js";
 import { createFeishuClient } from "./client.js";
+import { logRegisterOnce } from "./register-log-once.js";
 import { resolveToolsConfig } from "./tools-config.js";
 
 function json(data: unknown) {
@@ -188,5 +189,5 @@ export function registerFeishuChatTools(api: OpenClawPluginApi) {
     { name: "feishu_chat" },
   );
 
-  api.logger.info?.("feishu_chat: Registered feishu_chat tool");
+  logRegisterOnce(api.logger.info?.bind(api.logger), "feishu_chat", "feishu_chat: Registered feishu_chat tool");
 }

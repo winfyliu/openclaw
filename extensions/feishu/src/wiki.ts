@@ -7,6 +7,7 @@ import {
   toolExecutionErrorResult,
   unknownToolActionResult,
 } from "./tool-result.js";
+import { logRegisterOnce } from "./register-log-once.js";
 import { FeishuWikiSchema, type FeishuWikiParams } from "./wiki-schema.js";
 
 type ObjType = "doc" | "sheet" | "mindnote" | "bitable" | "file" | "docx" | "slides";
@@ -229,5 +230,9 @@ export function registerFeishuWikiTools(api: OpenClawPluginApi) {
     { name: "feishu_wiki" },
   );
 
-  api.logger.info?.(`feishu_wiki: Registered feishu_wiki tool`);
+  logRegisterOnce(
+    api.logger.info?.bind(api.logger),
+    "feishu_wiki",
+    "feishu_wiki: Registered feishu_wiki tool",
+  );
 }
