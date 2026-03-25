@@ -1654,6 +1654,21 @@ function summarizeSessionContext(messages: AgentMessage[]): {
   };
 }
 
+function resolveAdaptiveBootstrapContextMode(params: {
+  requested?: "full" | "lightweight";
+  runKind?: "default" | "heartbeat" | "cron";
+  lowContextWindow?: boolean;
+}): "full" | "lightweight" {
+  if (params.requested) {
+    return params.requested;
+  }
+  if (!params.lowContextWindow) {
+    return "full";
+  }
+  // Keep user-turn context fidelity: only auto-lightweight non-interactive runs.
+  return params.runKind === "heartbeat" || params.runKind === "cron" ? "lightweight" : "full";
+}
+
 export async function runEmbeddedAttempt(
   params: EmbeddedRunAttemptParams,
 ): Promise<EmbeddedRunAttemptResult> {
@@ -1708,6 +1723,11 @@ export async function runEmbeddedAttempt(
     });
 
     const sessionLabel = params.sessionKey ?? params.sessionId;
+    const adaptiveBootstrapContextMode = resolveAdaptiveBootstrapContextMode({
+      requested: params.bootstrapContextMode,
+      runKind: params.bootstrapContextRunKind,
+      lowContextWindow: params.lowContextWindow,
+    });
     const { bootstrapFiles: hookAdjustedBootstrapFiles, contextFiles } =
       await resolveBootstrapContextForRun({
         workspaceDir: effectiveWorkspace,
@@ -1715,7 +1735,7 @@ export async function runEmbeddedAttempt(
         sessionKey: params.sessionKey,
         sessionId: params.sessionId,
         warn: makeBootstrapWarn({ sessionLabel, warn: (message) => log.warn(message) }),
-        contextMode: params.bootstrapContextMode,
+        contextMode: adaptiveBootstrapContextMode,
         runKind: params.bootstrapContextRunKind,
       });
     const bootstrapMaxChars = resolveBootstrapMaxChars(params.config);

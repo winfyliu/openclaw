@@ -120,8 +120,41 @@ export const handleStatusCommand: CommandHandler = async (params, allowTextComma
   if (!allowTextCommands) {
     return null;
   }
+  const normalizedCommand = params.command.commandBodyNormalized.trim().toLowerCase();
+  const normalizedRaw = params.command.rawBodyNormalized.trim().toLowerCase();
+  const tokenUsageAliases = new Set([
+    "/tokens",
+    "/token",
+    "/token-usage",
+    "/token_usage",
+    "/usage",
+    "/用量",
+    "/token用量",
+    "/tokens用量",
+  ]);
+  const isNaturalLanguageTokenUsageQuery = (() => {
+    const text = normalizedRaw;
+    if (!text || text.startsWith("/")) {
+      return false;
+    }
+    if (/\b(and|then|also)\b|并且|然后|再帮我|顺便|另外/.test(text)) {
+      return false;
+    }
+    const hasTokenWord = /\btoken(s)?\b|令牌|token用量|tokens用量/.test(text);
+    const hasUsageIntent =
+      /usage|used|spent|cost|统计|用量|用了|消耗|本地/.test(text) ||
+      /多少\s*token/.test(text) ||
+      /token\s*(usage|used|spent|count)/.test(text);
+    if (!hasTokenWord || !hasUsageIntent) {
+      return false;
+    }
+    return text.length <= 80;
+  })();
   const statusRequested =
-    params.directives.hasStatusDirective || params.command.commandBodyNormalized === "/status";
+    params.directives.hasStatusDirective ||
+    normalizedCommand === "/status" ||
+    tokenUsageAliases.has(normalizedCommand) ||
+    isNaturalLanguageTokenUsageQuery;
   if (!statusRequested) {
     return null;
   }

@@ -6,7 +6,10 @@ import { resolveMergedSafeBinProfileFixtures } from "../infra/exec-safe-bin-runt
 import { logWarn } from "../logger.js";
 import { getPluginToolMeta } from "../plugins/tools.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
-import { resolveGatewayMessageChannel } from "../utils/message-channel.js";
+import {
+  isDeliverableMessageChannel,
+  resolveGatewayMessageChannel,
+} from "../utils/message-channel.js";
 import { resolveAgentConfig } from "./agent-scope.js";
 import { createApplyPatchTool } from "./apply-patch.js";
 import {
@@ -55,6 +58,7 @@ import {
   applyOwnerOnlyToolPolicy,
   collectExplicitAllowlist,
   mergeAlsoAllowPolicy,
+  normalizeToolName,
   resolveToolProfilePolicy,
 } from "./tool-policy.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
@@ -101,6 +105,24 @@ function applyModelProviderToolPolicy(
   // Models with a native web_search tool cannot receive OpenClaw's
   // web_search at the same time or the request will collide.
   return tools.filter((tool) => !TOOL_DENY_FOR_XAI_PROVIDERS.has(tool.name));
+}
+
+function applyImOrchestratorToolPolicy(
+  tools: AnyAgentTool[],
+  options?: {
+    messageProvider?: string;
+    sessionKey?: string;
+  },
+): AnyAgentTool[] {
+  const channel = resolveGatewayMessageChannel(options?.messageProvider);
+  if (!channel || !isDeliverableMessageChannel(channel)) {
+    return tools;
+  }
+  if (isSubagentSessionKey(options?.sessionKey)) {
+    return tools;
+  }
+  const allowed = new Set<string>(["sessions_spawn", "subagents", "agents_list"]);
+  return tools.filter((tool) => allowed.has(normalizeToolName(tool.name)));
 }
 
 function isApplyPatchAllowedForModel(params: {
@@ -583,8 +605,12 @@ export function createOpenClawCodingTools(options?: {
   // Security: treat unknown/undefined as unauthorized (opt-in, not opt-out)
   const senderIsOwner = options?.senderIsOwner === true;
   const toolsByAuthorization = applyOwnerOnlyToolPolicy(toolsForModelProvider, senderIsOwner);
+  const toolsForImOrchestrator = applyImOrchestratorToolPolicy(toolsByAuthorization, {
+    messageProvider: options?.messageProvider,
+    sessionKey: options?.sessionKey,
+  });
   const subagentFiltered = applyToolPolicyPipeline({
-    tools: toolsByAuthorization,
+    tools: toolsForImOrchestrator,
     toolMeta: (tool) => getPluginToolMeta(tool),
     warn: logWarn,
     steps: [

@@ -28,4 +28,40 @@ describe("internal events formatting", () => {
     expect(text).toContain("task_id: T-BBBB2222");
     expect(text).toContain("reason: credentials");
   });
+
+  it("formats task plan events", () => {
+    const text = formatAgentInternalEventsForPrompt([
+      {
+        type: "task_plan",
+        taskId: "T-CCCC3333",
+        childSessionKey: "agent:main:subagent:child-1",
+        taskLabel: "install skillhub",
+        plan: "1) read docs\n2) install\n3) verify",
+        complexity: "high",
+        confidence: 0.88,
+      },
+    ]);
+
+    expect(text).toContain("[Internal task plan event]");
+    expect(text).toContain("task_id: T-CCCC3333");
+    expect(text).toContain("task: install skillhub");
+    expect(text).toContain("complexity: high");
+    expect(text).toContain("confidence: 88%");
+    expect(text).toContain("BEGIN_UNTRUSTED_PLAN");
+  });
+
+  it("formats task plan event without task id", () => {
+    const text = formatAgentInternalEventsForPrompt([
+      {
+        type: "task_plan",
+        childSessionKey: "agent:main:subagent:child-2",
+        taskLabel: "verify release",
+        plan: "- check tag\n- publish",
+      },
+    ]);
+
+    expect(text).toContain("[Internal task plan event]");
+    expect(text).toContain("task: verify release");
+    expect(text).toContain("session_key: agent:main:subagent:child-2");
+  });
 });

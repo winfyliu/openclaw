@@ -523,6 +523,59 @@ describe("/approve command", () => {
   });
 });
 
+describe("status aliases for token usage", () => {
+  it("routes /tokens to status reply", async () => {
+    const cfg = {
+      commands: { text: true },
+      channels: { whatsapp: { allowFrom: ["*"] } },
+    } as OpenClawConfig;
+    const params = buildParams("/tokens", cfg);
+
+    const result = await handleCommands(params);
+    expect(result.shouldContinue).toBe(false);
+    expect(result.reply?.text).toContain("OpenClaw");
+    expect(result.reply?.text).toContain("Model:");
+  });
+
+  it("routes /用量 to status reply", async () => {
+    const cfg = {
+      commands: { text: true },
+      channels: { whatsapp: { allowFrom: ["*"] } },
+    } as OpenClawConfig;
+    const params = buildParams("/用量", cfg);
+
+    const result = await handleCommands(params);
+    expect(result.shouldContinue).toBe(false);
+    expect(result.reply?.text).toContain("OpenClaw");
+    expect(result.reply?.text).toContain("Model:");
+  });
+
+  it("routes natural-language token usage query to status reply", async () => {
+    const cfg = {
+      commands: { text: true },
+      channels: { whatsapp: { allowFrom: ["*"] } },
+    } as OpenClawConfig;
+    const params = buildParams("看下本地token用量", cfg);
+
+    const result = await handleCommands(params);
+    expect(result.shouldContinue).toBe(false);
+    expect(result.reply?.text).toContain("OpenClaw");
+    expect(result.reply?.text).toContain("Model:");
+  });
+
+  it("does not hijack composite natural-language messages", async () => {
+    const cfg = {
+      commands: { text: true },
+      channels: { whatsapp: { allowFrom: ["*"] } },
+    } as OpenClawConfig;
+    const params = buildParams("先看下token用量，然后帮我继续翻译", cfg);
+
+    const result = await handleCommands(params);
+    expect(result.shouldContinue).toBe(true);
+    expect(result.reply).toBeUndefined();
+  });
+});
+
 describe("/compact command", () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -16,6 +16,7 @@ import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { normalizeAccountId, normalizeMainKey } from "../routing/session-key.js";
 import { defaultRuntime } from "../runtime.js";
 import { isCronSessionKey } from "../sessions/session-key-utils.js";
+import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { extractTextFromChatContent } from "../shared/chat-content.js";
 import {
   type DeliveryContext,
@@ -49,6 +50,7 @@ import type { SubagentSessionRole } from "./subagent-capabilities.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import type { SpawnSubagentMode } from "./subagent-spawn.js";
 import { resolveTaskByIdOrRun } from "./task-registry.js";
+import { readLatestAssistantReply } from "./tools/agent-step.js";
 import { sanitizeTextContent, extractAssistantText } from "./tools/sessions-helpers.js";
 import { isAnnounceSkip } from "./tools/sessions-send-helpers.js";
 
@@ -56,9 +58,54 @@ const FAST_TEST_MODE = process.env.OPENCLAW_TEST_FAST === "1";
 const FAST_TEST_RETRY_INTERVAL_MS = 8;
 const DEFAULT_SUBAGENT_ANNOUNCE_TIMEOUT_MS = 90_000;
 const MAX_TIMER_SAFE_TIMEOUT_MS = 2_147_000_000;
+const MAX_PLAN_PROMPT_TRACKED_TASKS = 2_000;
 let subagentRegistryRuntimePromise: Promise<
   typeof import("./subagent-registry-runtime.js")
 > | null = null;
+
+type PlanPromptStateStore = {
+  promptedAtByTaskId: Map<string, number>;
+  insertionOrder: string[];
+};
+
+const PLAN_PROMPT_STATE = Symbol.for("openclaw.subagent.planPromptState");
+
+function getPlanPromptStateStore(): PlanPromptStateStore {
+  return resolveGlobalSingleton<PlanPromptStateStore>(PLAN_PROMPT_STATE, () => ({
+    promptedAtByTaskId: new Map(),
+    insertionOrder: [],
+  }));
+}
+
+function markAndCheckTaskPlanPrompted(taskId?: string): boolean {
+  const normalizedTaskId = taskId?.trim();
+  if (!normalizedTaskId) {
+    return false;
+  }
+  const state = getPlanPromptStateStore();
+  if (state.promptedAtByTaskId.has(normalizedTaskId)) {
+    return true;
+  }
+  state.promptedAtByTaskId.set(normalizedTaskId, Date.now());
+  state.insertionOrder.push(normalizedTaskId);
+  if (state.promptedAtByTaskId.size > MAX_PLAN_PROMPT_TRACKED_TASKS) {
+    const oldest = state.insertionOrder.shift();
+    if (typeof oldest === "string") {
+      state.promptedAtByTaskId.delete(oldest);
+    }
+  }
+  return false;
+}
+
+export function __markAndCheckTaskPlanPromptedForTests(taskId?: string): boolean {
+  return markAndCheckTaskPlanPrompted(taskId);
+}
+
+export function __resetPlanPromptStateForTests(): void {
+  const state = getPlanPromptStateStore();
+  state.promptedAtByTaskId.clear();
+  state.insertionOrder = [];
+}
 
 function loadSubagentRegistryRuntime() {
   subagentRegistryRuntimePromise ??= import("./subagent-registry-runtime.js");
@@ -498,6 +545,118 @@ function buildChildCompletionFindings(
   }
 
   return ["Child completion results:", "", ...sections].join("\n\n");
+}
+
+function extractStructuredPlanFromFindings(findings: string): string | undefined {
+  const text = findings.trim();
+  if (!text) {
+    return undefined;
+  }
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return undefined;
+  }
+
+  const stepLike = lines.filter((line) => /^(?:\d+\.|[-*])\s+/.test(line));
+  if (stepLike.length >= 2) {
+    return stepLike.slice(0, 8).join("\n");
+  }
+
+  const planStart = lines.findIndex((line) => /^(?:plan|规划|计划)\s*[:：]?$/i.test(line));
+  if (planStart >= 0) {
+    const body = lines.slice(planStart + 1, planStart + 9);
+    if (body.length > 0) {
+      return body.join("\n");
+    }
+  }
+
+  const inlinePlanLine = lines.find((line) => /^(?:plan|规划|计划)\s*[:：]\s*/i.test(line));
+  if (inlinePlanLine) {
+    const body = inlinePlanLine
+      .replace(/^(?:plan|规划|计划)\s*[:：]\s*/i, "")
+      .split(/[;；]/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+    if (body.length > 0) {
+      return body.map((part, idx) => `${idx + 1}. ${part}`).join("\n");
+    }
+  }
+
+  return undefined;
+}
+
+function shouldPromptPlanToUser(params: {
+  requesterIsSubagent: boolean;
+  expectsCompletionMessage: boolean;
+  taskLabel: string;
+  plan?: string;
+}): boolean {
+  if (params.requesterIsSubagent) {
+    return false;
+  }
+  if (!params.expectsCompletionMessage) {
+    return false;
+  }
+  const planText = params.plan?.trim();
+  if (!planText) {
+    return false;
+  }
+  const stepCount = planText.split(/\r?\n/).filter((line) => line.trim().length > 0).length;
+  if (stepCount >= 3) {
+    return true;
+  }
+  const taskLower = params.taskLabel.toLowerCase();
+  return /install|部署|迁移|升级|发布|refactor|重构|修复/.test(taskLower);
+}
+
+function estimatePlanComplexity(params: {
+  taskLabel: string;
+  plan?: string;
+}): "low" | "medium" | "high" {
+  const steps = (params.plan ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean).length;
+  const taskLower = params.taskLabel.toLowerCase();
+  const highSignal = /migration|migrate|release|publish|deploy|upgrade|refactor|迁移|发布|部署|升级|重构/.test(
+    taskLower,
+  );
+  if (steps >= 5 || highSignal) {
+    return "high";
+  }
+  if (steps >= 3) {
+    return "medium";
+  }
+  return "low";
+}
+
+function estimatePlanConfidence(params: {
+  findings: string;
+  plan?: string;
+}): number {
+  const findingsLen = params.findings.trim().length;
+  const planLines = (params.plan ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (planLines.length === 0) {
+    return 0.3;
+  }
+  let confidence = 0.55;
+  if (planLines.length >= 3) {
+    confidence += 0.15;
+  }
+  if (findingsLen >= 120) {
+    confidence += 0.1;
+  }
+  if (planLines.some((line) => /verify|test|检查|验证/.test(line.toLowerCase()))) {
+    confidence += 0.1;
+  }
+  return Math.max(0, Math.min(1, confidence));
 }
 
 function formatDurationShort(valueMs?: number) {
@@ -1139,11 +1298,15 @@ function buildAnnounceReplyInstruction(params: {
   requesterIsSubagent: boolean;
   announceType: SubagentAnnounceType;
   expectsCompletionMessage?: boolean;
+  includePlanForUser?: boolean;
 }): string {
   if (params.requesterIsSubagent) {
     return `Convert this completion into a concise internal orchestration update for your parent agent in your own words. Keep this internal context private (don't mention system/log/stats/session details or announce type). If this result is duplicate or no update is needed, reply ONLY: ${SILENT_REPLY_TOKEN}.`;
   }
   if (params.expectsCompletionMessage) {
+    if (params.includePlanForUser) {
+      return `A completed ${params.announceType} is ready for user delivery. First provide a brief execution plan summary (1-3 bullets) only if helpful, then provide the final result in your normal assistant voice. Keep internal context private (don't mention system/log/stats/session details or announce type).`;
+    }
     return `A completed ${params.announceType} is ready for user delivery. Convert the result above into your normal assistant voice and send that user-facing update now. Keep this internal context private (don't mention system/log/stats/session details or announce type).`;
   }
   return `A completed ${params.announceType} is ready for user delivery. Convert the result above into your normal assistant voice and send that user-facing update now. Keep this internal context private (don't mention system/log/stats/session details or announce type), and do not copy the internal event text verbatim. Reply ONLY: ${SILENT_REPLY_TOKEN} if this exact result was already delivered to the user in this same turn.`;
@@ -1490,21 +1653,34 @@ export async function runSubagentAnnounceFlow(params: {
       }
     }
 
+    const plan = extractStructuredPlanFromFindings(findings);
+    const planComplexity = estimatePlanComplexity({ taskLabel, plan });
+    const planConfidence = estimatePlanConfidence({ findings, plan });
+    const trackedTask = resolveTaskByIdOrRun({
+      sessionKey: targetRequesterSessionKey,
+      runId: params.childRunId,
+    });
+    const shouldIncludePlanForUser = shouldPromptPlanToUser({
+      requesterIsSubagent,
+      expectsCompletionMessage,
+      taskLabel,
+      plan,
+    });
+    const alreadyPromptedPlan = shouldIncludePlanForUser
+      ? markAndCheckTaskPlanPrompted(trackedTask?.taskId)
+      : false;
+    const includePlanForUser = shouldIncludePlanForUser && !alreadyPromptedPlan;
     const replyInstruction = buildAnnounceReplyInstruction({
       requesterIsSubagent,
       announceType,
       expectsCompletionMessage,
+      includePlanForUser,
     });
     const statsLine = await buildCompactAnnounceStatsLine({
       sessionKey: params.childSessionKey,
       startedAt: params.startedAt,
       endedAt: params.endedAt,
     });
-    const trackedTask = resolveTaskByIdOrRun({
-      sessionKey: targetRequesterSessionKey,
-      runId: params.childRunId,
-    });
-
     const internalEvents: AgentInternalEvent[] = [
       {
         type: "task_completion",
@@ -1520,6 +1696,17 @@ export async function runSubagentAnnounceFlow(params: {
         replyInstruction,
       },
     ];
+    if (plan) {
+      internalEvents.push({
+        type: "task_plan",
+        taskId: trackedTask?.taskId,
+        childSessionKey: params.childSessionKey,
+        taskLabel,
+        plan,
+        complexity: planComplexity,
+        confidence: planConfidence,
+      });
+    }
     if (trackedTask?.taskId) {
       internalEvents.push({
         type: "task_progress",

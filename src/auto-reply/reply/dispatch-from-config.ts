@@ -48,7 +48,11 @@ import {
 import { getGlobalHookRunner, getGlobalPluginRegistry } from "../../plugins/hook-runner-global.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { normalizeTtsAutoMode, resolveConfiguredTtsMode } from "../../tts/tts-config.js";
-import { INTERNAL_MESSAGE_CHANNEL, normalizeMessageChannel } from "../../utils/message-channel.js";
+import {
+  INTERNAL_MESSAGE_CHANNEL,
+  isDeliverableMessageChannel,
+  normalizeMessageChannel,
+} from "../../utils/message-channel.js";
 import type { FinalizedMsgContext } from "../templating.js";
 import type { BlockReplyContext, GetReplyOptions, ReplyPayload } from "../types.js";
 import { shouldSkipDuplicateInbound } from "./inbound-dedupe.js";
@@ -287,6 +291,11 @@ export async function dispatchReplyFromConfig(params: {
     originatingTo &&
     originatingChannel !== currentSurface,
   );
+  const isImUserTurn = Boolean(
+    isDeliverableMessageChannel(currentSurface ?? "") ||
+      isDeliverableMessageChannel(originatingChannel ?? ""),
+  );
+  const shouldSuppressIntermediateReplies = isImUserTurn;
   const shouldSuppressTyping =
     shouldRouteToOriginating || originatingChannel === INTERNAL_MESSAGE_CHANNEL;
   const ttsChannel = shouldRouteToOriginating ? originatingChannel : currentSurface;
@@ -509,9 +518,11 @@ export async function dispatchReplyFromConfig(params: {
             : `I received your input but could not resume that task yet: ${forwarded.error ?? "unknown error"}`,
         });
         if (forwarded.forwarded) {
-          dispatcher.sendToolResult({
-            text: buildCredentialResumeStatusLine(resumeDecision.task),
-          });
+          if (!shouldSuppressIntermediateReplies) {
+            dispatcher.sendToolResult({
+              text: buildCredentialResumeStatusLine(resumeDecision.task),
+            });
+          }
         }
         const counts = dispatcher.getQueuedCounts();
         recordProcessed("completed", {
@@ -524,13 +535,14 @@ export async function dispatchReplyFromConfig(params: {
 
     if (sessionKey && ctx.CommandSource !== "native") {
       const panel = buildTaskProgressPanel(sessionKey);
-      if (panel) {
+      if (panel && !shouldSuppressIntermediateReplies) {
         recordFirstAck("task_progress_panel");
         dispatcher.sendToolResult({ text: panel });
       }
     }
 
-    const fastAbort = await tryFastAbortFromMessage({ ctx, cfg });
+    const abortRuntime = await loadAbortRuntime();
+    const fastAbort = await abortRuntime.tryFastAbortFromMessage({ ctx, cfg });
     if (fastAbort.handled) {
       const payload = {
         text: abortRuntime.formatAbortReplyText(fastAbort.stoppedSubagents),
@@ -688,7 +700,9 @@ export async function dispatchReplyFromConfig(params: {
               await sendPayloadAsync(deliveryPayload, undefined, false);
             } else {
               recordFirstAck("tool_result");
-              dispatcher.sendToolResult(deliveryPayload);
+              if (!shouldSuppressIntermediateReplies) {
+                dispatcher.sendToolResult(deliveryPayload);
+              }
             }
           };
           return run();
@@ -723,7 +737,9 @@ export async function dispatchReplyFromConfig(params: {
               await sendPayloadAsync(ttsPayload, context?.abortSignal, false);
             } else {
               recordFirstAck("block_reply");
-              dispatcher.sendBlockReply(ttsPayload);
+              if (!shouldSuppressIntermediateReplies) {
+                dispatcher.sendBlockReply(ttsPayload);
+              }
             }
           };
           return run();

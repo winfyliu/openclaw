@@ -957,6 +957,7 @@ export async function runEmbeddedPiAgent(
             allowGatewaySubagentBinding: params.allowGatewaySubagentBinding,
             contextEngine,
             contextTokenBudget: ctxInfo.tokens,
+            lowContextWindow: ctxGuard.shouldWarn,
             skillsSnapshot: params.skillsSnapshot,
             prompt,
             images: params.images,
