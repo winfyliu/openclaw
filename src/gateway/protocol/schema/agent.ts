@@ -4,7 +4,7 @@ import { InputProvenanceSchema, NonEmptyString, SessionLabelString } from "./pri
 export const AgentInternalEventSchema = Type.Object(
   {
     type: Type.String({
-      enum: ["task_completion", "task_progress", "task_blocked_user_input"],
+      enum: ["task_completion", "task_progress", "task_plan", "task_blocked_user_input"],
     }),
     source: Type.Optional(Type.String({ enum: ["subagent", "cron"] })),
     childSessionKey: Type.Optional(Type.String()),
@@ -34,6 +34,9 @@ export const AgentInternalEventSchema = Type.Object(
     statsLine: Type.Optional(Type.String()),
     replyInstruction: Type.Optional(Type.String()),
     taskId: Type.Optional(Type.String()),
+    plan: Type.Optional(Type.String()),
+    complexity: Type.Optional(Type.String({ enum: ["low", "medium", "high"] })),
+    confidence: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
     progress: Type.Optional(Type.Number()),
     message: Type.Optional(Type.String()),
     reason: Type.Optional(

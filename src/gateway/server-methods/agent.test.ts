@@ -659,6 +659,40 @@ describe("gateway agent handler", () => {
     );
   });
 
+  it("accepts task_plan internal events on agent requests", async () => {
+    primeMainAgentRun();
+    mocks.agentCommand.mockClear();
+    const respond = vi.fn();
+
+    await invokeAgent(
+      {
+        message: "task plan routed",
+        sessionKey: "agent:main:main",
+        internalEvents: [
+          {
+            type: "task_plan",
+            taskId: "T-1234",
+            childSessionKey: "agent:main:subagent:child-1",
+            taskLabel: "weather lookup",
+            plan: "1. call weather API\n2. summarize",
+            complexity: "low",
+            confidence: 0.9,
+          },
+        ],
+        idempotencyKey: "task-plan-event-accepted",
+      } as AgentParams,
+      { reqId: "task-plan-event-accepted", respond },
+    );
+
+    expect(respond).not.toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({
+        message: expect.stringContaining("invalid agent params"),
+      }),
+    );
+  });
+
   it("only forwards workspaceDir for spawned sessions with stored workspace inheritance", async () => {
     primeMainAgentRun();
     mockMainSessionEntry({
