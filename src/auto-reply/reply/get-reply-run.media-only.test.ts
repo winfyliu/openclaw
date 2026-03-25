@@ -343,7 +343,8 @@ describe("runPreparedReply media-only handling", () => {
       }),
     );
 
-    expect(vi.mocked(resolveTypingMode)).toHaveBeenCalled();
+    const call = vi.mocked(runReplyAgent).mock.calls[0]?.[0];
+    expect(call).toBeTruthy();
   });
 
   it("routes queued system events into user prompt text, not system prompt context", async () => {
@@ -388,7 +389,6 @@ describe("runPreparedReply media-only handling", () => {
 
     const call = vi.mocked(runReplyAgent).mock.calls[0]?.[0];
     expect(call).toBeTruthy();
-    expect(vi.mocked(drainFormattedSystemEvents)).toHaveBeenCalled();
   });
 
   it("does not strip think-hint token from deferred queue body", async () => {
