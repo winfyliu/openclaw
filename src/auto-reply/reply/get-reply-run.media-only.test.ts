@@ -70,6 +70,17 @@ vi.mock("./queue/settings.js", () => ({
   resolveQueueSettings: vi.fn().mockReturnValue({ mode: "followup" }),
 }));
 
+vi.mock("./task-policies.js", () => ({
+  appendTaskApprovalEvent: vi.fn(),
+  maybeApplyPoliciesFromUserText: vi.fn().mockReturnValue(null),
+  readTaskPolicies: vi.fn().mockReturnValue({
+    planApprovalMode: "auto_execute",
+    riskApprovalRequired: true,
+    externalSideEffectsApproval: true,
+    costlyOpsApproval: false,
+  }),
+}));
+
 vi.mock("./route-reply.runtime.js", () => ({
   routeReply: vi.fn(),
 }));
