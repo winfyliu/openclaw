@@ -3187,8 +3187,28 @@ export async function runEmbeddedAttempt(
 
         if (!isProbeSession) {
           const wallMs = Date.now() - attemptWallStartedAt;
+          const usage = getUsageTotals();
+          const usageInput = typeof usage?.input === "number" ? usage.input : 0;
+          const usageOutput = typeof usage?.output === "number" ? usage.output : 0;
+          const usageTotal = typeof usage?.total === "number" ? usage.total : usageInput + usageOutput;
+          const toolSummary =
+            toolMetas.length > 0
+              ? toolMetas
+                  .map((entry) => {
+                    const name = typeof entry.toolName === "string" ? entry.toolName : "tool";
+                    const meta =
+                      typeof entry.meta === "string" && entry.meta.trim().length > 0
+                        ? entry.meta.trim()
+                        : "";
+                    return meta ? `${name}:${meta}` : name;
+                  })
+                  .join(",")
+              : "none";
           log.info(
             `run timing: runId=${params.runId} sessionId=${params.sessionId} channel=${params.messageProvider ?? "unknown"} fastPath=${imFastPath} fastPathReason=${imFastPathReason} wallMs=${wallMs} hooksMs=${stageMs.hooks ?? 0} llmMs=${stageMs.llm ?? 0} compactionWaitMs=${stageMs.compactionWait ?? 0} afterTurnMs=${stageMs.afterTurn ?? 0}`,
+          );
+          log.info(
+            `run timing detail: runId=${params.runId} sessionId=${params.sessionId} channel=${params.messageProvider ?? "unknown"} provider=${params.provider} model=${params.modelId} toolCalls=${toolMetas.length} toolSummary=${toolSummary} usageInput=${usageInput} usageOutput=${usageOutput} usageTotal=${usageTotal}`,
           );
         }
 

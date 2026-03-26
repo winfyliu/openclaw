@@ -19,6 +19,7 @@ export type HookContext = {
 type HookOutcome = { blocked: true; reason: string } | { blocked: false; params: unknown };
 
 const log = createSubsystemLogger("agents/tools");
+const LOG_TOOL_CALL_TIMING = process.env.OPENCLAW_LOG_TOOL_CALL_TIMING === "1";
 const BEFORE_TOOL_CALL_WRAPPED = Symbol("beforeToolCallWrapped");
 const adjustedParamsByToolCallId = new Map<string, unknown>();
 const MAX_TRACKED_ADJUSTED_PARAMS = 1024;
@@ -223,8 +224,19 @@ export function wrapToolWithBeforeToolCallHook(
         }
       }
       const normalizedToolName = normalizeToolName(toolName || "tool");
+      const startedAt = LOG_TOOL_CALL_TIMING ? Date.now() : 0;
+      if (LOG_TOOL_CALL_TIMING) {
+        log.debug(
+          `tool call start runId=${ctx?.runId ?? "unknown"} sessionKey=${ctx?.sessionKey ?? "unknown"} tool=${normalizedToolName} toolCallId=${toolCallId ?? "unknown"}`,
+        );
+      }
       try {
         const result = await execute(toolCallId, outcome.params, signal, onUpdate);
+        if (LOG_TOOL_CALL_TIMING) {
+          log.debug(
+            `tool call end runId=${ctx?.runId ?? "unknown"} sessionKey=${ctx?.sessionKey ?? "unknown"} tool=${normalizedToolName} toolCallId=${toolCallId ?? "unknown"} status=ok durationMs=${Date.now() - startedAt}`,
+          );
+        }
         await recordLoopOutcome({
           ctx,
           toolName: normalizedToolName,
@@ -234,6 +246,11 @@ export function wrapToolWithBeforeToolCallHook(
         });
         return result;
       } catch (err) {
+        if (LOG_TOOL_CALL_TIMING) {
+          log.warn(
+            `tool call end runId=${ctx?.runId ?? "unknown"} sessionKey=${ctx?.sessionKey ?? "unknown"} tool=${normalizedToolName} toolCallId=${toolCallId ?? "unknown"} status=error durationMs=${Date.now() - startedAt} err=${String(err)}`,
+          );
+        }
         await recordLoopOutcome({
           ctx,
           toolName: normalizedToolName,

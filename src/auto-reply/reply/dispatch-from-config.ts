@@ -1,5 +1,6 @@
 import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
+import { countPendingDescendantRuns } from "../../agents/subagent-registry.js";
 import {
   buildCredentialResumeAck,
   buildCredentialResumeStatusLine,
@@ -175,6 +176,7 @@ export async function dispatchReplyFromConfig(params: {
   const startTime = diagnosticsEnabled ? Date.now() : 0;
   const canTrackSession = diagnosticsEnabled && Boolean(sessionKey);
   let firstAckLogged = false;
+  const dispatchUserTurnTsMs = Date.now();
 
   const recordFirstAck = (reason: string) => {
     if (!diagnosticsEnabled || firstAckLogged) {
@@ -211,6 +213,12 @@ export async function dispatchReplyFromConfig(params: {
       reason: opts?.reason,
       error: opts?.error,
     });
+    if (sessionKey) {
+      const activePendingAnnounceCount = Math.max(0, countPendingDescendantRuns(sessionKey));
+      logVerbose(
+        `[debug] dispatch end sessionKey=${sessionKey} userTurnTsMs=${dispatchUserTurnTsMs} outcome=${outcome} activePendingAnnounceCount=${activePendingAnnounceCount} durationMs=${Date.now() - startTime} reason=${opts?.reason ?? ""} error=${opts?.error ?? ""}`,
+      );
+    }
   };
 
   const markProcessing = () => {
@@ -480,6 +488,12 @@ export async function dispatchReplyFromConfig(params: {
   }
 
   markProcessing();
+  if (sessionKey) {
+    const activePendingAnnounceCount = Math.max(0, countPendingDescendantRuns(sessionKey));
+    logVerbose(
+      `[debug] dispatch start sessionKey=${sessionKey} userTurnTsMs=${dispatchUserTurnTsMs} activePendingAnnounceCount=${activePendingAnnounceCount} provider=${channel}`,
+    );
+  }
 
   try {
     const inboundCommandBody = (

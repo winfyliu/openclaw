@@ -64,6 +64,60 @@ let subagentRegistryRuntimePromise: Promise<
 > | null = null;
 const announceLog = (...parts: unknown[]) => defaultRuntime.log(parts.map(String).join(""));
 
+function extractUserMessageTimestampMs(message: unknown): number | undefined {
+  if (!message || typeof message !== "object") {
+    return undefined;
+  }
+  const msg = message as Record<string, unknown>;
+  if (msg.role !== "user") {
+    return undefined;
+  }
+  const direct = [
+    msg.timestamp,
+    msg.createdAt,
+    msg.time,
+    msg.ts,
+    msg.sentAt,
+    msg.updatedAt,
+  ];
+  for (const value of direct) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+  }
+  return undefined;
+}
+
+async function resolveLatestUserTurnTimestampMs(sessionKey: string): Promise<number | undefined> {
+  try {
+    const history = await callGateway<{ messages?: Array<unknown> }>({
+      method: "chat.history",
+      params: { sessionKey, limit: 100 },
+      timeoutMs: 10_000,
+    });
+    const messages = Array.isArray(history?.messages) ? history.messages : [];
+    let latest: number | undefined;
+    for (const message of messages) {
+      const ts = extractUserMessageTimestampMs(message);
+      if (typeof ts !== "number") {
+        continue;
+      }
+      if (latest === undefined || ts > latest) {
+        latest = ts;
+      }
+    }
+    return latest;
+  } catch {
+    return undefined;
+  }
+}
+
 type PlanPromptStateStore = {
   promptedAtByTaskId: Map<string, number>;
   insertionOrder: string[];
@@ -1755,6 +1809,16 @@ export async function runSubagentAnnounceFlow(params: {
           })
         : targetRequesterOrigin;
     const directIdempotencyKey = buildAnnounceIdempotencyKey(announceId);
+    const latestUserTurnTsMs = await resolveLatestUserTurnTimestampMs(targetRequesterSessionKey);
+    const activePendingDescendants = Math.max(
+      0,
+      (subagentRegistryRuntime ?? (await loadSubagentRegistryRuntime())).countPendingDescendantRuns(
+        targetRequesterSessionKey,
+      ),
+    );
+    announceLog(
+      `[debug] subagent announce direct context childRunId=${params.childRunId} announceId=${announceId} directIdempotencyKey=${directIdempotencyKey} requester=${targetRequesterSessionKey} latestUserTurnTsMs=${latestUserTurnTsMs ?? "n/a"} activePendingDescendantRuns=${activePendingDescendants}`,
+    );
     const delivery = await deliverSubagentAnnouncement({
       requesterSessionKey: targetRequesterSessionKey,
       announceId,
