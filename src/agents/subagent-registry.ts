@@ -635,6 +635,9 @@ function startSubagentAnnounceCleanupFlow(runId: string, entry: SubagentRunRecor
   if (!beginSubagentCleanup(runId)) {
     return false;
   }
+  defaultRuntime.log(
+    `[debug] subagent announce cleanup start run=${runId} child=${entry.childSessionKey} requester=${entry.requesterSessionKey} expectsCompletion=${entry.expectsCompletionMessage === true} spawnMode=${entry.spawnMode} cleanup=${entry.cleanup} timeoutMs=${SUBAGENT_ANNOUNCE_TIMEOUT_MS}`,
+  );
   const requesterOrigin = normalizeDeliveryContext(entry.requesterOrigin);
   const finalizeAnnounceCleanup = (didAnnounce: boolean) => {
     void finalizeSubagentCleanup(runId, entry.cleanup, didAnnounce).catch((err) => {
@@ -1406,6 +1409,10 @@ export function registerSubagentRun(params: {
 async function waitForSubagentCompletion(runId: string, waitTimeoutMs: number) {
   try {
     const timeoutMs = Math.max(1, Math.floor(waitTimeoutMs));
+    const waitStartedAt = Date.now();
+    defaultRuntime.log(
+      `[debug] subagent wait start run=${runId} timeoutMs=${timeoutMs}`,
+    );
     const wait = await callGateway<{
       status?: string;
       startedAt?: number;
@@ -1419,6 +1426,9 @@ async function waitForSubagentCompletion(runId: string, waitTimeoutMs: number) {
       },
       timeoutMs: timeoutMs + 10_000,
     });
+    defaultRuntime.log(
+      `[debug] subagent wait end run=${runId} status=${wait?.status ?? "unknown"} waitMs=${Date.now() - waitStartedAt} startedAt=${typeof wait?.startedAt === "number" ? wait.startedAt : "n/a"} endedAt=${typeof wait?.endedAt === "number" ? wait.endedAt : "n/a"} error=${typeof wait?.error === "string" ? wait.error : ""}`,
+    );
     if (wait?.status !== "ok" && wait?.status !== "error" && wait?.status !== "timeout") {
       return;
     }
@@ -1471,8 +1481,10 @@ async function waitForSubagentCompletion(runId: string, waitTimeoutMs: number) {
       accountId: entry.requesterOrigin?.accountId,
       triggerCleanup: true,
     });
-  } catch {
-    // ignore
+  } catch (err) {
+    defaultRuntime.log(
+      `[warn] subagent wait failed run=${runId} timeoutMs=${Math.max(1, Math.floor(waitTimeoutMs))} err=${String(err)}`,
+    );
   }
 }
 

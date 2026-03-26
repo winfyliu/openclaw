@@ -62,6 +62,7 @@ const MAX_PLAN_PROMPT_TRACKED_TASKS = 2_000;
 let subagentRegistryRuntimePromise: Promise<
   typeof import("./subagent-registry-runtime.js")
 > | null = null;
+const announceLog = (...parts: unknown[]) => defaultRuntime.log(parts.map(String).join(""));
 
 type PlanPromptStateStore = {
   promptedAtByTaskId: Map<string, number>;
@@ -1448,6 +1449,9 @@ export async function runSubagentAnnounceFlow(params: {
   signal?: AbortSignal;
   bestEffortDeliver?: boolean;
 }): Promise<boolean> {
+  announceLog(
+    `[debug] subagent announce flow start childRunId=${params.childRunId} childSession=${params.childSessionKey} requester=${params.requesterSessionKey} timeoutMs=${params.timeoutMs} waitForCompletion=${params.waitForCompletion !== false} expectsCompletion=${params.expectsCompletionMessage === true} cleanup=${params.cleanup}`,
+  );
   let didAnnounce = false;
   const expectsCompletionMessage = params.expectsCompletionMessage === true;
   const announceType = params.announceType ?? "subagent task";
@@ -1474,6 +1478,10 @@ export async function runSubagentAnnounceFlow(params: {
 
     if (!reply && params.waitForCompletion !== false) {
       const waitMs = settleTimeoutMs;
+      const waitStartedAt = Date.now();
+      announceLog(
+        `[debug] subagent announce wait start childRunId=${params.childRunId} waitMs=${waitMs} rpcTimeoutMs=${waitMs + 2000}`,
+      );
       const wait = await callGateway<{
         status?: string;
         startedAt?: number;
@@ -1487,6 +1495,9 @@ export async function runSubagentAnnounceFlow(params: {
         },
         timeoutMs: waitMs + 2000,
       });
+      announceLog(
+        `[debug] subagent announce wait end childRunId=${params.childRunId} status=${wait?.status ?? "unknown"} waitMs=${Date.now() - waitStartedAt} startedAt=${typeof wait?.startedAt === "number" ? wait.startedAt : "n/a"} endedAt=${typeof wait?.endedAt === "number" ? wait.endedAt : "n/a"} error=${typeof wait?.error === "string" ? wait.error : ""}`,
+      );
       const waitError = typeof wait?.error === "string" ? wait.error : undefined;
       if (wait?.status === "timeout") {
         outcome = { status: "timeout" };
@@ -1767,6 +1778,9 @@ export async function runSubagentAnnounceFlow(params: {
       directIdempotencyKey,
       signal: params.signal,
     });
+    announceLog(
+      `[debug] subagent announce delivery childRunId=${params.childRunId} delivered=${delivery.delivered} path=${delivery.path} expectsCompletion=${expectsCompletionMessage} requester=${targetRequesterSessionKey}${delivery.error ? ` error=${delivery.error}` : ""}`,
+    );
     didAnnounce = delivery.delivered;
     if (!delivery.delivered && delivery.path === "direct" && delivery.error) {
       defaultRuntime.error?.(
@@ -1777,6 +1791,9 @@ export async function runSubagentAnnounceFlow(params: {
     defaultRuntime.error?.(`Subagent announce failed: ${String(err)}`);
     // Best-effort follow-ups; ignore failures to avoid breaking the caller response.
   } finally {
+    announceLog(
+      `[debug] subagent announce flow end childRunId=${params.childRunId} didAnnounce=${didAnnounce} cleanup=${shouldDeleteChildSession ? "delete" : "keep"}`,
+    );
     // Patch label after all writes complete
     if (params.label) {
       try {

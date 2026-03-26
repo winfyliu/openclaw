@@ -1113,6 +1113,7 @@ export async function handleFeishuMessage(params: {
       });
 
       log(`feishu[${account.accountId}]: dispatching to agent (session=${route.sessionKey})`);
+      const dispatchStartedAt = Date.now();
       const { queuedFinal, counts } = await core.channel.reply.withReplyDispatcher({
         dispatcher,
         onSettled: () => {
@@ -1136,7 +1137,7 @@ export async function handleFeishuMessage(params: {
       }
 
       log(
-        `feishu[${account.accountId}]: dispatch complete (queuedFinal=${queuedFinal}, replies=${counts.final})`,
+        `feishu[${account.accountId}]: dispatch complete (queuedFinal=${queuedFinal}, replies=${counts.final}, dispatchMs=${Date.now() - dispatchStartedAt})`,
       );
     }
   } catch (err) {

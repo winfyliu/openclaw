@@ -73,6 +73,7 @@ const TOOL_DENY_BY_MESSAGE_PROVIDER: Readonly<Record<string, readonly string[]>>
 };
 const TOOL_DENY_FOR_XAI_PROVIDERS = new Set(["web_search"]);
 const MEMORY_FLUSH_ALLOWED_TOOL_NAMES = new Set(["read", "write"]);
+const LOG_TOOL_POLICY_TIMING = process.env.OPENCLAW_LOG_TOOL_POLICY_TIMING === "1";
 
 function normalizeMessageProvider(messageProvider?: string): string | undefined {
   const normalized = messageProvider?.trim().toLowerCase();
@@ -630,6 +631,11 @@ export function createOpenClawCodingTools(options?: {
       { policy: subagentPolicy, label: "subagent tools.allow" },
     ],
   });
+  if (LOG_TOOL_POLICY_TIMING) {
+    logWarn(
+      `tools profile pipeline: provider=${options?.modelProvider ?? "unknown"} model=${options?.modelId ?? "unknown"} messageProvider=${options?.messageProvider ?? "unknown"} counts pre=${toolsForImOrchestrator.length} post=${subagentFiltered.length}`,
+    );
+  }
   // Always normalize tool JSON Schemas before handing them to pi-agent/pi-ai.
   // Without this, some providers (notably OpenAI) will reject root-level union schemas.
   // Provider-specific cleaning: Gemini needs constraint keywords stripped, but Anthropic expects them.

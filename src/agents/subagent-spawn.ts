@@ -10,6 +10,7 @@ import {
   resolveGatewaySessionStoreTarget,
 } from "../gateway/session-utils.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
   isValidAgentId,
   isCronSessionKey,
@@ -97,6 +98,8 @@ export const SUBAGENT_SPAWN_ACCEPTED_NOTE =
   "Auto-announce is push-based. After spawning children, do NOT call sessions_list, sessions_history, exec sleep, or any polling tool. Wait for completion events to arrive as user messages, track expected child session keys, and only send your final answer after ALL expected completions arrive. If a child completion event arrives AFTER your final answer, reply ONLY with NO_REPLY.";
 export const SUBAGENT_SPAWN_SESSION_ACCEPTED_NOTE =
   "thread-bound session stays active after this task; continue in-thread for follow-ups.";
+
+const log = createSubsystemLogger("agents/subagent-spawn");
 
 export type SpawnSubagentResult = {
   status: "accepted" | "forbidden" | "error";
@@ -672,6 +675,10 @@ export async function spawnSubagentDirect(
       workspaceDir: _workspaceDir,
       ...publicSpawnedMetadata
     } = spawnedMetadata;
+    const runStartAt = Date.now();
+    log.debug(
+      `subagent spawn start childSession=${childSessionKey} requester=${requesterInternalKey} mode=${spawnMode} thread=${requestThreadBinding} expectsCompletion=${expectsCompletionMessage} runTimeoutSeconds=${runTimeoutSeconds} taskLabel=${label || task}`,
+    );
     const response = await callGateway<{ runId: string }>({
       method: "agent",
       params: {
@@ -694,10 +701,16 @@ export async function spawnSubagentDirect(
       },
       timeoutMs: 10_000,
     });
+    log.debug(
+      `subagent spawn gateway agent returned childSession=${childSessionKey} requestedRunId=${childIdem} returnedRunId=${response?.runId ?? "n/a"} durationMs=${Date.now() - runStartAt}`,
+    );
     if (typeof response?.runId === "string" && response.runId) {
       childRunId = response.runId;
     }
   } catch (err) {
+    log.warn(
+      `subagent spawn failed childSession=${childSessionKey} requester=${requesterInternalKey} err=${summarizeError(err)}`,
+    );
     if (attachmentAbsDir) {
       try {
         await fs.rm(attachmentAbsDir, { recursive: true, force: true });

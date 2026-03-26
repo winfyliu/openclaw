@@ -9,6 +9,8 @@ import {
   type ToolPolicyLike,
 } from "./tool-policy.js";
 
+const LOG_TOOL_POLICY_TIMING = process.env.OPENCLAW_LOG_TOOL_POLICY_TIMING === "1";
+
 export type ToolPolicyPipelineStep = {
   policy: ToolPolicyLike | undefined;
   label: string;
@@ -69,6 +71,7 @@ export function applyToolPolicyPipeline(params: {
   warn: (message: string) => void;
   steps: ToolPolicyPipelineStep[];
 }): AnyAgentTool[] {
+  const pipelineStartedAt = LOG_TOOL_POLICY_TIMING ? Date.now() : 0;
   const coreToolNames = new Set(
     params.tools
       .filter((tool) => !params.toolMeta(tool))
@@ -110,6 +113,11 @@ export function applyToolPolicyPipeline(params: {
 
     const expanded = expandPolicyWithPluginGroups(policy, pluginGroups);
     filtered = expanded ? filterToolsByPolicy(filtered, expanded) : filtered;
+  }
+  if (LOG_TOOL_POLICY_TIMING) {
+    params.warn(
+      `tools: policy pipeline timing totalMs=${Date.now() - pipelineStartedAt} pre=${params.tools.length} post=${filtered.length} steps=${params.steps.length}`,
+    );
   }
   return filtered;
 }
