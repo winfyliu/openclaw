@@ -142,16 +142,57 @@ export async function saveCronStore(
   await setSecureFileMode(tmp);
   if (previous !== null && !skipBackup) {
     try {
-      const backupPath = `${storePath}.bak`;
+      // Create timestamped backup
+      const timestamp = Date.now();
+      const backupPath = `${storePath}.bak.${timestamp}`;
       await fs.promises.copyFile(storePath, backupPath);
       await setSecureFileMode(backupPath);
-    } catch {
-      // best-effort
+
+      // Clean up old backups (keep last 5)
+      await cleanupOldBackups(storePath);
+
+      // Also update the main backup file for compatibility
+      const mainBackupPath = `${storePath}.bak`;
+      await fs.promises.copyFile(storePath, mainBackupPath);
+      await setSecureFileMode(mainBackupPath);
+    } catch (err) {
+      // best-effort backup
     }
   }
   await renameWithRetry(tmp, storePath);
   await setSecureFileMode(storePath);
   serializedStoreCache.set(storePath, json);
+}
+
+/**
+ * Clean up old backup files, keeping only the most recent ones
+ */
+async function cleanupOldBackups(storePath: string): Promise<void> {
+  try {
+    const dir = path.dirname(storePath);
+    const baseName = path.basename(storePath);
+    const files = await fs.promises.readdir(dir);
+
+    // Collect backup files
+    const backups = files
+      .filter((f) => f.startsWith(`${baseName}.bak.`))
+      .map((f) => {
+        const parts = f.split(".");
+        const timestamp = parseInt(parts[parts.length - 1]);
+        return { name: f, timestamp: isNaN(timestamp) ? 0 : timestamp };
+      })
+      .filter((b) => b.timestamp > 0)
+      .sort((a, b) => b.timestamp - a.timestamp);
+
+    // Keep only the last 5 backups
+    const toDelete = backups.slice(5);
+    for (const backup of toDelete) {
+      const backupPath = path.join(dir, backup.name);
+      await fs.promises.unlink(backupPath).catch(() => {});
+    }
+  } catch {
+    // best-effort cleanup
+  }
 }
 
 const RENAME_MAX_RETRIES = 3;

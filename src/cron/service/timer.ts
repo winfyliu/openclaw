@@ -632,14 +632,28 @@ export async function onTimer(state: CronServiceState) {
       const jobTimeoutMs = resolveCronJobTimeoutMs(job);
 
       try {
+        // Create a separate error context for each job
+        const jobContext = {
+          jobId: id,
+          jobName: job.name,
+          startedAt,
+          timeoutMs: jobTimeoutMs,
+        };
+
+        // Execute job with enhanced error handling
         const result = await executeJobCoreWithTimeout(state, job);
         return { jobId: id, ...result, startedAt, endedAt: state.deps.nowMs() };
       } catch (err) {
         const errorText = isAbortError(err) ? timeoutErrorMessage() : String(err);
         state.deps.log.warn(
-          { jobId: id, jobName: job.name, timeoutMs: jobTimeoutMs ?? null },
+          { jobId: id, jobName: job.name, timeoutMs: jobTimeoutMs ?? null, error: errorText },
           `cron: job failed: ${errorText}`,
         );
+
+        // Record error details for better debugging
+        job.state.lastError = errorText;
+        job.state.lastErrorReason = resolveFailoverReasonFromError(errorText) ?? undefined;
+
         return {
           jobId: id,
           status: "error",
@@ -647,6 +661,11 @@ export async function onTimer(state: CronServiceState) {
           startedAt,
           endedAt: state.deps.nowMs(),
         };
+      } finally {
+        // Ensure job state is cleaned up even if an error occurs
+        if (job.state) {
+          job.state.runningAtMs = undefined;
+        }
       }
     };
 
@@ -654,19 +673,51 @@ export async function onTimer(state: CronServiceState) {
     const results: (TimedCronRunOutcome | undefined)[] = Array.from({ length: dueJobs.length });
     let cursor = 0;
     const workers = Array.from({ length: concurrency }, async () => {
-      for (;;) {
-        const index = cursor++;
-        if (index >= dueJobs.length) {
-          return;
+      try {
+        for (;;) {
+          const index = cursor++;
+          if (index >= dueJobs.length) {
+            return;
+          }
+          const due = dueJobs[index];
+          if (!due) {
+            return;
+          }
+          try {
+            results[index] = await runDueJob(due);
+          } catch (err) {
+            // Catch any unexpected errors that might escape runDueJob
+            const errorText = String(err);
+            state.deps.log.error(
+              { jobId: due.id, error: errorText },
+              `cron: worker failed to run job: ${errorText}`,
+            );
+            results[index] = {
+              jobId: due.id,
+              status: "error" as const,
+              error: errorText,
+              startedAt: state.deps.nowMs(),
+              endedAt: state.deps.nowMs(),
+            };
+          }
         }
-        const due = dueJobs[index];
-        if (!due) {
-          return;
-        }
-        results[index] = await runDueJob(due);
+      } catch (err) {
+        // Catch any unexpected errors in the worker itself
+        state.deps.log.error({ error: String(err) }, `cron: worker crashed: ${String(err)}`);
       }
     });
-    await Promise.all(workers);
+
+    // Wait for all workers to complete, ignoring individual failures
+    await Promise.all(
+      workers.map((p) =>
+        p.catch((err) => {
+          state.deps.log.error(
+            { error: String(err) },
+            `cron: worker promise failed: ${String(err)}`,
+          );
+        }),
+      ),
+    );
 
     const completedResults: TimedCronRunOutcome[] = results.filter(
       (entry): entry is TimedCronRunOutcome => entry !== undefined,
@@ -829,15 +880,26 @@ function collectRunnableJobs(
   if (!state.store) {
     return [];
   }
-  return state.store.jobs.filter((job) =>
-    isRunnableJob({
-      job,
-      nowMs,
-      skipJobIds: opts?.skipJobIds,
-      skipAtIfAlreadyRan: opts?.skipAtIfAlreadyRan,
-      allowCronMissedRunByLastRun: opts?.allowCronMissedRunByLastRun,
-    }),
-  );
+  return state.store.jobs
+    .filter((job) =>
+      isRunnableJob({
+        job,
+        nowMs,
+        skipJobIds: opts?.skipJobIds,
+        skipAtIfAlreadyRan: opts?.skipAtIfAlreadyRan,
+        allowCronMissedRunByLastRun: opts?.allowCronMissedRunByLastRun,
+      }),
+    )
+    .sort((a, b) => {
+      // Higher priority jobs run first
+      const priorityA = a.priority ?? 50;
+      const priorityB = b.priority ?? 50;
+      if (priorityA !== priorityB) {
+        return priorityB - priorityA;
+      }
+      // If priorities are equal, run jobs with earlier nextRunAtMs first
+      return (a.state.nextRunAtMs ?? 0) - (b.state.nextRunAtMs ?? 0);
+    });
 }
 
 export async function runMissedJobs(

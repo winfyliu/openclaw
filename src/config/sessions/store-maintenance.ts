@@ -258,6 +258,84 @@ export function capEntryCount(
   return toRemove.length;
 }
 
+/**
+ * Smart session compression strategy
+ * Compresses session content based on importance and usage frequency
+ * @returns Number of sessions compressed
+ */
+export function compressSessions(
+  store: Record<string, SessionEntry>,
+  opts: {
+    log?: boolean;
+    onCompressed?: (params: { key: string; entry: SessionEntry; compressed: boolean }) => void;
+  } = {},
+): number {
+  const now = Date.now();
+  let compressed = 0;
+
+  for (const [key, entry] of Object.entries(store)) {
+    if (!entry) continue;
+
+    const isActive = entry.updatedAt && now - entry.updatedAt < 7 * 24 * 60 * 60 * 1000;
+    const isImportant = entry.lastChannel && entry.lastTo;
+
+    // Skip active or important sessions
+    if (isActive || isImportant) continue;
+
+    // Compress session data
+    const wasCompressed = compressSessionEntry(entry);
+    if (wasCompressed) {
+      compressed++;
+      opts.onCompressed?.({ key, entry, compressed: wasCompressed });
+    }
+  }
+
+  if (compressed > 0 && opts.log !== false) {
+    log.info("compressed inactive sessions", { compressed });
+  }
+
+  return compressed;
+}
+
+/**
+ * Compress individual session entry
+ * @returns true if compression was applied
+ */
+function compressSessionEntry(entry: SessionEntry): boolean {
+  let compressed = false;
+
+  // Remove unnecessary fields
+  if (entry.acp) {
+    // Keep only essential ACP data
+    const essentialAcp = {
+      ...entry.acp,
+      // Remove detailed history or large fields
+      history: undefined,
+      cache: undefined,
+    };
+    if (JSON.stringify(essentialAcp) !== JSON.stringify(entry.acp)) {
+      entry.acp = essentialAcp;
+      compressed = true;
+    }
+  }
+
+  // Compress metadata fields (if exists)
+  if ("metadata" in entry && entry.metadata && typeof entry.metadata === "object") {
+    const essentialMetadata = {
+      ...entry.metadata,
+      // Remove large or temporary metadata
+      temp: undefined,
+      cache: undefined,
+    };
+    if (JSON.stringify(essentialMetadata) !== JSON.stringify(entry.metadata)) {
+      (entry as any).metadata = essentialMetadata;
+      compressed = true;
+    }
+  }
+
+  return compressed;
+}
+
 async function getSessionFileSize(storePath: string): Promise<number | null> {
   try {
     const stat = await fs.promises.stat(storePath);

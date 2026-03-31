@@ -3,6 +3,7 @@ import type { OAuthCredentials } from "@mariozechner/pi-ai";
 import { resolveOAuthPath } from "../../config/paths.js";
 import { withFileLock } from "../../infra/file-lock.js";
 import { loadJsonFile, saveJsonFile } from "../../infra/json-file.js";
+import { encryptSensitiveFields, decryptSensitiveFields } from "../../security/encryption.js";
 import {
   AUTH_STORE_LOCK_OPTIONS,
   AUTH_STORE_VERSION,
@@ -384,7 +385,24 @@ function applyLegacyStore(store: AuthProfileStore, legacy: LegacyAuthStore): voi
 
 function loadCoercedStore(authPath: string): AuthProfileStore | null {
   const raw = loadJsonFile(authPath);
-  return coerceAuthStore(raw);
+  const store = coerceAuthStore(raw);
+  if (store) {
+    // Decrypt sensitive fields
+    store.profiles = Object.fromEntries(
+      Object.entries(store.profiles).map(([profileId, credential]) => {
+        let decryptedCredential = { ...credential };
+        if (credential.type === "api_key") {
+          decryptedCredential = decryptSensitiveFields(decryptedCredential, ["key"]);
+        } else if (credential.type === "token") {
+          decryptedCredential = decryptSensitiveFields(decryptedCredential, ["token"]);
+        } else if (credential.type === "oauth") {
+          decryptedCredential = decryptSensitiveFields(decryptedCredential, ["access", "refresh"]);
+        }
+        return [profileId, decryptedCredential];
+      }),
+    ) as AuthProfileStore["profiles"];
+  }
+  return store;
 }
 
 function shouldLogAuthStoreTiming(): boolean {
@@ -571,7 +589,18 @@ export function saveAuthProfileStore(store: AuthProfileStore, agentDir?: string)
         delete sanitized.token;
         return [profileId, sanitized];
       }
-      return [profileId, credential];
+
+      // Encrypt sensitive fields
+      let encryptedCredential = { ...credential };
+      if (credential.type === "api_key") {
+        encryptedCredential = encryptSensitiveFields(encryptedCredential, ["key"]);
+      } else if (credential.type === "token") {
+        encryptedCredential = encryptSensitiveFields(encryptedCredential, ["token"]);
+      } else if (credential.type === "oauth") {
+        encryptedCredential = encryptSensitiveFields(encryptedCredential, ["access", "refresh"]);
+      }
+
+      return [profileId, encryptedCredential];
     }),
   ) as AuthProfileStore["profiles"];
   const payload = {

@@ -29,6 +29,7 @@ import {
 } from "./store-cache.js";
 import {
   capEntryCount,
+  compressSessions,
   getActiveSessionMaintenanceWarning,
   pruneStaleEntries,
   resolveMaintenanceConfig,
@@ -275,11 +276,13 @@ export type SessionMaintenanceApplyReport = {
   afterCount: number;
   pruned: number;
   capped: number;
+  compressed: number;
   diskBudget: SessionDiskBudgetSweepResult | null;
 };
 
 export {
   capEntryCount,
+  compressSessions,
   getActiveSessionMaintenanceWarning,
   pruneStaleEntries,
   resolveMaintenanceConfig,
@@ -431,10 +434,11 @@ async function saveSessionStoreUnlocked(
         afterCount: Object.keys(store).length,
         pruned: 0,
         capped: 0,
+        compressed: 0,
         diskBudget,
       });
     } else {
-      // Prune stale entries and cap total count before serializing.
+      // Prune stale entries, cap total count, and compress inactive sessions before serializing.
       const removedSessionFiles = new Map<string, string | undefined>();
       const pruned = pruneStaleEntries(store, maintenance.pruneAfterMs, {
         onPruned: ({ entry }) => {
@@ -444,6 +448,21 @@ async function saveSessionStoreUnlocked(
       const capped = capEntryCount(store, maintenance.maxEntries, {
         onCapped: ({ entry }) => {
           rememberRemovedSessionFile(removedSessionFiles, entry);
+        },
+      });
+      const compressed = compressSessions(store, {
+        onCompressed: ({
+          key,
+          entry,
+          compressed,
+        }: {
+          key: string;
+          entry: SessionEntry;
+          compressed: boolean;
+        }) => {
+          if (compressed) {
+            log.debug("compressed session", { sessionKey: key });
+          }
         },
       });
       const archivedDirs = new Set<string>();
@@ -496,6 +515,7 @@ async function saveSessionStoreUnlocked(
         afterCount: Object.keys(store).length,
         pruned,
         capped,
+        compressed,
         diskBudget,
       });
     }

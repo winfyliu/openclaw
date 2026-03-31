@@ -144,6 +144,8 @@ export type CronJob = CronJobBase<
   CronFailureAlert | false
 > & {
   state: CronJobState;
+  /** Job priority (0-100), higher priority jobs run first */
+  priority?: number;
 };
 
 export type CronStoreFile = {
@@ -153,10 +155,12 @@ export type CronStoreFile = {
 
 export type CronJobCreate = Omit<CronJob, "id" | "createdAtMs" | "updatedAtMs" | "state"> & {
   state?: Partial<CronJobState>;
+  priority?: number;
 };
 
 export type CronJobPatch = Partial<Omit<CronJob, "id" | "createdAtMs" | "state" | "payload">> & {
   payload?: CronPayloadPatch;
   delivery?: CronDeliveryPatch;
   state?: Partial<CronJobState>;
+  priority?: number;
 };
