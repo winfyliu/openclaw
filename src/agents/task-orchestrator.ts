@@ -23,6 +23,17 @@ import {
   type VerificationCheck,
   type VerificationScenario,
 } from "./self-verification.js";
+import {
+  submitBackendPollingTask,
+  cancelBackendPollingTask,
+  getBackendPollingTaskStatus,
+  type BackendPollingTaskParams,
+} from "./backend-polling-bridge.js";
+import {
+  countActiveBackgroundTasks,
+  listBackgroundTasks,
+  type BackgroundTaskResult,
+} from "./background-task-executor.js";
 
 const TASK_RESUME_FORWARD_RETRY_CONFIG = {
   attempts: 3,
@@ -456,6 +467,96 @@ export function buildCredentialResumeAck(task: TaskRecord): string {
 
 export function buildCredentialResumeStatusLine(task: TaskRecord): string {
   return `[${task.taskId}] Credentials received. Resuming "${task.title}" now.`;
+}
+
+// ============================================================================
+// Backend Polling Integration (DeerFlow-style optimization)
+// ============================================================================
+
+/**
+ * Submit a subagent task for backend polling execution.
+ *
+ * This is the DeerFlow-style optimization entry point. Instead of the LLM
+ * polling for task status (which costs API calls), the backend polls
+ * in-memory state at zero cost and forwards progress to the task-registry.
+ *
+ * Usage:
+ * ```typescript
+ * const result = submitSubagentTaskWithPolling({
+ *   requesterSessionKey: "agent:main:session:abc",
+ *   childSessionKey: "agent:main:subagent:xyz",
+ *   runId: "run-123",
+ *   task: "Implement feature X",
+ *   label: "Feature X",
+ *   execute: createGatewayTaskExecutor({ ... }),
+ * });
+ * ```
+ */
+export function submitSubagentTaskWithPolling(
+  params: BackendPollingTaskParams,
+): { taskId: string; status: "submitted" | "error"; error?: string } {
+  return submitBackendPollingTask(params);
+}
+
+/**
+ * Cancel a subagent task that is running via backend polling.
+ */
+export function cancelSubagentPollingTask(taskId: string): boolean {
+  return cancelBackendPollingTask(taskId);
+}
+
+/**
+ * Get the current status of a backend-polled subagent task.
+ * This is a zero-cost in-memory lookup.
+ */
+export function getSubagentPollingTaskStatus(
+  taskId: string,
+): BackgroundTaskResult | undefined {
+  return getBackendPollingTaskStatus(taskId);
+}
+
+/**
+ * Get the count of currently active background-polled tasks.
+ */
+export function countActivePollingTasks(): number {
+  return countActiveBackgroundTasks();
+}
+
+/**
+ * List all background-polled tasks, optionally filtered by status.
+ */
+export function listPollingTasks(
+  filter?: { status?: BackgroundTaskResult["status"] },
+): BackgroundTaskResult[] {
+  return listBackgroundTasks(filter);
+}
+
+/**
+ * Build a status panel for background-polled tasks.
+ * Similar to buildTaskProgressPanel but for backend-polled tasks.
+ */
+export function buildPollingTaskProgressPanel(): string {
+  const activeTasks = listBackgroundTasks().filter(
+    (t) => t.status === "pending" || t.status === "running",
+  );
+  if (activeTasks.length === 0) {
+    return "";
+  }
+  const lines = ["Backend-polled task progress:"];
+  for (const task of activeTasks.slice(0, 6)) {
+    const progress = typeof task.progress === "number" ? `${task.progress}%` : "-";
+    const lastMsg = task.messages.length > 0
+      ? task.messages[task.messages.length - 1].content
+      : "";
+    const updatedAgoSec = Math.max(
+      0,
+      Math.floor((Date.now() - (task.startedAt ?? Date.now())) / 1000),
+    );
+    lines.push(
+      `- ${task.taskId} [${task.status}] ${progress} ${lastMsg} (${updatedAgoSec}s ago)`.trim(),
+    );
+  }
+  return lines.join("\n");
 }
 
 export async function forwardCredentialInputToTask(params: {

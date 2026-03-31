@@ -1,6 +1,6 @@
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 
-export type TaskResourceLockDomain = "task_resume_forward" | "task_registry_write";
+export type TaskResourceLockDomain = "task_resume_forward" | "task_registry_write" | "background_task_submit";
 
 type LockWaiter = {
   resolve: (release: () => void) => void;
