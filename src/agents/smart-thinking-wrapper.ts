@@ -28,7 +28,7 @@ export async function runEmbeddedPiAgentWithSmartThinking(
   quickReplyPromise.then(async (quickReply) => {
     if (params.onPartialReply) {
       try {
-        await params.onPartialReply(quickReply);
+        await params.onPartialReply({ text: quickReply });
         log.debug(`Sent quick reply: ${quickReply}`);
       } catch (error) {
         log.warn(`Failed to send quick reply: ${String(error)}`);

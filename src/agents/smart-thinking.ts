@@ -159,10 +159,9 @@ export async function processTaskIntelligently(message: any, params: any, ctx: a
           thinking: complexity === 'complex' ? 'medium' : 'off'
         },
         {
-          sessionKey: params.sessionKey,
           sessionId: params.sessionId,
           runId: params.runId
-        }
+        } as any
       );
       
       resolve(result);
