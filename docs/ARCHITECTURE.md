@@ -440,6 +440,83 @@ async function saveCronStore(store: CronStore, storePath: string) {
 }
 ```
 
+### 11. 命令队列与 Lane 并发控制
+
+**核心文件**: `src/process/command-queue.ts`, `src/process/lanes.ts`, `src/agents/pi-embedded-runner/lanes.ts`
+
+这是 OpenClaw 中**最关键的并发控制机制**，决定了消息处理是串行还是并行。
+
+#### 11.1 Lane 类型
+
+```typescript
+enum CommandLane {
+  Main     = "main",       // 全局主队列（默认）
+  Cron     = "cron",       // 定时任务队列
+  Subagent = "subagent",   // 子代理队列
+  Nested   = "nested",     // 嵌套调用队列
+}
+```
+
+除了预定义的 lane，系统还会为每个 session 动态创建 lane，格式为 `session:<sessionKey>`。
+
+#### 11.2 队列调度机制
+
+```typescript
+type LaneState = {
+  lane: string;
+  queue: QueueEntry[];
+  activeTaskIds: Set<number>;
+  maxConcurrent: number;    // 默认为 1，即串行执行！
+  draining: boolean;
+  generation: number;
+};
+```
+
+**关键特性**：
+- 每个 lane 默认 `maxConcurrent = 1`，即**同一 lane 内的任务严格串行**
+- 不同 lane 之间可以并行执行
+- 支持通过 `setCommandLaneConcurrency()` 动态调整并发数
+
+#### 11.3 Session Lane 的串行保证
+
+当用户通过飞书发送消息时，消息会被分配到 `session:agent:main:main` lane：
+
+```
+消息1 → session:agent:main:main lane (maxConcurrent=1) → 执行中...
+消息2 → session:agent:main:main lane (maxConcurrent=1) → 排队等待消息1完成
+消息3 → session:agent:main:main lane (maxConcurrent=1) → 排队等待
+```
+
+**设计目的**：保证同一会话内的消息按顺序处理，避免上下文混乱。
+
+#### 11.4 Lane 路由规则
+
+```
+飞书/Telegram 消息 → session:<sessionKey> lane（串行）
+定时任务           → cron lane（串行）
+子代理 (sessions_spawn) → subagent lane（独立并行）
+嵌套调用           → nested lane（独立并行）
+```
+
+#### 11.5 sessions_spawn 的阻塞问题
+
+```typescript
+// sessions-spawn-tool.ts
+const result = await spawnSubagentDirect(...)  // 主 Agent await 等待子 Agent
+```
+
+虽然子 Agent 在 `subagent` lane 中独立运行，但主 Agent 使用 `await` 等待结果，导致主 Agent 的 session lane 一直被占用，后续消息必须排队。
+
+**时序示例**：
+```
+T0  消息1进入 session lane → 主Agent开始处理
+T1  主Agent调用 sessions_spawn → await阻塞
+T2  子Agent在 subagent lane 执行（12秒）
+T3  子Agent完成 → 返回结果给主Agent
+T4  主Agent生成回复 → session lane 释放
+T4  消息2才能开始处理 ← 被阻塞了整个T1-T4时间段
+```
+
 ## 系统架构图
 
 ### 整体架构图
@@ -456,6 +533,15 @@ graph TB
         GW[Gateway 网关服务器]
         AGENT[AI Agent 代理]
         CRON[Cron 任务调度器]
+    end
+    
+    subgraph "并发控制层 Concurrency Control"
+        LANE_MAIN[Main Lane]
+        LANE_SESSION[Session Lane<br/>session:agent:main:main<br/>maxConcurrent=1]
+        LANE_CRON[Cron Lane]
+        LANE_SUB[Subagent Lane]
+        LANE_NESTED[Nested Lane]
+        CQ[CommandQueue<br/>命令队列调度器]
     end
     
     subgraph "领域层 Domain Layer"
@@ -475,15 +561,26 @@ graph TB
     TUI --> GW
     WEB --> GW
     
-    GW --> AGENT
-    GW --> CRON
-    GW --> CH
+    GW --> CQ
+    CH --> CQ
+    CRON --> CQ
+    
+    CQ --> LANE_MAIN
+    CQ --> LANE_SESSION
+    CQ --> LANE_CRON
+    CQ --> LANE_SUB
+    CQ --> LANE_NESTED
+    
+    LANE_SESSION --> AGENT
+    LANE_CRON --> AGENT
+    LANE_MAIN --> AGENT
     
     AGENT --> PL
     AGENT --> HK
     AGENT --> CFG
     
-    CRON --> AGENT
+    AGENT -->|sessions_spawn await| LANE_SUB
+    
     CRON --> STORE
     
     PL --> CFG
@@ -554,32 +651,52 @@ graph LR
 
 ## 数据流
 
-### 消息处理流程
+### 消息处理流程（含 Lane 队列）
 
 ```mermaid
 sequenceDiagram
     participant User as 用户
     participant Channel as 消息渠道
-    participant Router as 消息路由
-    participant Session as 会话管理器
-    participant Agent as AI 代理
+    participant CQ as CommandQueue
+    participant Lane as Session Lane<br/>(maxConcurrent=1)
+    participant Agent as AI Agent 主代理
     participant Hook as 钩子系统
     participant Tool as 工具
+    participant SubLane as Subagent Lane
+    participant SubAgent as 子代理
     participant Response as 响应生成
     
     User->>Channel: 发送消息
-    Channel->>Router: 转发消息
-    Router->>Session: 查找/创建会话
-    Session->>Agent: 传递上下文
+    Channel->>CQ: 入队到 Session Lane
+    CQ->>Lane: enqueue (queueSize=N)
+    
+    alt Lane 空闲
+        Lane->>Agent: dequeue (waitMs≈0)
+    else Lane 忙碌
+        Note over Lane: 排队等待前序任务完成
+        Lane->>Agent: dequeue (waitMs=阻塞时间)
+    end
+    
     Agent->>Hook: 触发 before_prompt_build
     Hook-->>Agent: 返回处理结果
     Agent->>Tool: 调用工具
-    Tool-->>Agent: 返回结果
+    
+    alt 工具是 sessions_spawn
+        Tool->>SubLane: 入队到 Subagent Lane
+        SubLane->>SubAgent: 子代理执行
+        Note over Agent: await 阻塞等待子代理
+        SubAgent-->>Tool: 返回结果
+        Tool-->>Agent: 返回结果
+    else 普通工具
+        Tool-->>Agent: 返回结果
+    end
+    
     Agent->>Hook: 触发 after_agent_turn
     Hook-->>Agent: 返回处理结果
     Agent->>Response: 生成响应
     Response->>Channel: 发送响应
     Channel->>User: 显示响应
+    Agent->>Lane: lane task done (释放 Lane)
 ```
 
 ### 配置加载流程
@@ -721,6 +838,38 @@ graph TD
     STORE --> SEC[../security/]
     
     TYP --> SHARED[types-shared.ts]
+```
+
+### 命令队列与 Lane 系统依赖图
+
+```mermaid
+graph TD
+    CQ[process/command-queue.ts] --> LANES[process/lanes.ts]
+    CQ --> DIAG[logging/diagnostic.ts]
+    
+    LANES --> ENUM[CommandLane enum]
+    
+    subgraph "Lane 消费者"
+        AR[agents/pi-embedded-runner/lanes.ts] --> LANES
+        AR --> CQ
+        GW[gateway/server-lanes.ts] --> LANES
+        GW --> CQ
+        CRON_OPS[cron/service/ops.ts] --> LANES
+        CRON_OPS --> CQ
+        HB[infra/heartbeat-runner.ts] --> LANES
+        HB --> CQ
+    end
+    
+    subgraph "Lane 生产者"
+        CH[channels/feishu 等] --> CQ
+        AUTO[auto-reply/reply/] --> CQ
+        TIMER[cron/service/timer.ts] --> CQ
+    end
+    
+    subgraph "工具调用"
+        SPAWN[agents/tools/sessions-spawn-tool.ts] --> SUB[subagent-spawn.ts]
+        SUB --> CQ
+    end
 ```
 
 ## 状态机图
@@ -900,10 +1049,37 @@ type CronServiceDeps = {
   ↓
 应用层 (Gateway/Agents)
   ↓
+并发控制层 (CommandQueue/Lanes)
+  ↓
 领域层 (Channels/Plugins)
   ↓
 基础设施层 (Config/Storage/Security)
 ```
+
+### 5. Lane 并发控制模式
+
+系统采用**多 Lane 串行队列**模式进行并发控制：
+
+```mermaid
+graph LR
+    subgraph "不同 Lane 之间并行"
+        direction TB
+        L1[Session Lane A<br/>消息1 → 消息2 → 消息3]
+        L2[Session Lane B<br/>消息1 → 消息2]
+        L3[Cron Lane<br/>任务1 → 任务2]
+        L4[Subagent Lane<br/>子代理1 → 子代理2]
+    end
+```
+
+**核心规则**：
+- 同一 Lane 内严格串行（`maxConcurrent=1`）
+- 不同 Lane 之间完全并行
+- Session Lane 保证会话上下文顺序一致性
+- 子代理在独立 Lane 运行，不阻塞其他 Lane
+
+**注意事项**：
+- `sessions_spawn` 虽然子代理在独立 Lane，但主 Agent 的 `await` 会阻塞 Session Lane
+- 如需提高单 session 并发，可通过 `setCommandLaneConcurrency()` 调整
 
 ## 性能优化
 
