@@ -42,6 +42,10 @@ function loadPiEmbeddedRuntime() {
   return piEmbeddedRuntimePromise;
 }
 
+function loadSmartThinkingRuntime() {
+  return import("../../agents/smart-thinking-wrapper.js");
+}
+
 function loadRouteReplyRuntime() {
   routeReplyRuntimePromise ??= import("./route-reply.runtime.js");
   return routeReplyRuntimePromise;
@@ -226,8 +230,8 @@ export function createFollowupRunner(params: {
             const authProfile = resolveRunAuthProfile(queued.run, provider);
             let attemptCompactionCount = 0;
             try {
-              const { runEmbeddedPiAgent } = await loadPiEmbeddedRuntime();
-              const result = await runEmbeddedPiAgent({
+              const { runEmbeddedPiAgentWithSmartThinking } = await loadSmartThinkingRuntime();
+              const result = await runEmbeddedPiAgentWithSmartThinking({
                 allowGatewaySubagentBinding: true,
                 sessionId: queued.run.sessionId,
                 sessionKey: queued.run.sessionKey,
@@ -278,6 +282,7 @@ export function createFollowupRunner(params: {
                   bootstrapPromptWarningSignaturesSeen[
                     bootstrapPromptWarningSignaturesSeen.length - 1
                   ],
+                onPartialReply: opts?.onPartialReply,
                 onAgentEvent: (evt: { stream: string; data?: Record<string, unknown> }) => {
                   if (evt.stream !== "compaction") {
                     return;
