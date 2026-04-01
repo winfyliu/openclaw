@@ -74,13 +74,7 @@ export async function callLLM(model: any, prompt: string, options: any): Promise
 // 快速回复生成器
 export async function generateQuickReply(message: string, config: any, activeAgents: number = 0, queueSize: number = 0): Promise<string> {
   try {
-    // 使用非thinking模式的LLM生成快速回复
-    const model = {
-      provider: 'custom-api-deepseek-com',
-      model: 'deepseek-chat',
-      api: 'openai-responses',
-      contextWindow: 16000
-    };
+    log.debug(`Generating quick reply for message: ${message.substring(0, 50)}...`);
     
     // 构建系统状态信息
     let systemStatus = '';
@@ -92,30 +86,19 @@ export async function generateQuickReply(message: string, config: any, activeAge
       }
     }
     
-    const prompt = `
-你是一个智能助手，需要对用户的消息生成一个简短的快速回复，表明你已经收到消息并正在处理。
-回复应该简洁明了，不超过20个字，不要包含任何多余的信息。
-如果系统当前有活跃任务或排队任务，请在回复中适当体现。
-用户消息：${message}
-系统状态：${systemStatus}
-快速回复：
-    `;
+    // 直接生成简单的快速回复，避免依赖外部LLM
+    const fallbackReplies = [
+      `收到，正在处理${systemStatus}`,
+      `好的，稍等片刻${systemStatus}`,
+      `正在为你查询${systemStatus}`,
+      `已收到消息，马上处理${systemStatus}`
+    ];
     
-    // 使用非thinking模式调用LLM
-    const response = await callLLM(model, prompt, { thinking: 'off' });
+    const randomIndex = Math.floor(Math.random() * fallbackReplies.length);
+    const quickReply = fallbackReplies[randomIndex];
     
-    // 提取回复内容
-    let reply = '';
-    if (Array.isArray(response.content)) {
-      reply = response.content.map((block: any) => 
-        block.type === 'text' ? block.text : ''
-      ).join('').trim();
-    } else if (typeof response.content === 'string') {
-      reply = response.content.trim();
-    }
-    
-    // 确保回复长度合适
-    return reply.length > 20 ? reply.substring(0, 20) + '...' : reply;
+    log.debug(`Generated quick reply: ${quickReply}`);
+    return quickReply;
   } catch (error) {
     log.warn(`Failed to generate quick reply: ${String(error)}`);
     // 根据系统状态生成后备回复

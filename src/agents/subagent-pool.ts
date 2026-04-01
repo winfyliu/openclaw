@@ -68,16 +68,20 @@ export class SubAgentPool {
     if (contextId && this.pool.has(contextId)) {
       const agent = this.pool.get(contextId)!;
       agent.updateLastUsed();
+      log.debug(`Reusing existing subagent ${agent.agentId} for context ${contextId}`);
       return agent;
     }
 
     if (this.pool.size >= this.maxPoolSize) {
+      log.debug(`Subagent pool at capacity (${this.pool.size}/${this.maxPoolSize}), cleaning up idle agents`);
       this.cleanupIdleAgents();
       if (this.pool.size >= this.maxPoolSize) {
+        log.debug(`Pool still at capacity, creating new agent anyway`);
         return this.createNewAgent();
       }
     }
 
+    log.debug(`Creating new subagent, current pool size: ${this.pool.size}`);
     return this.createNewAgent();
   }
 
@@ -140,6 +144,9 @@ export class SubAgentPool {
         this.activeTask = task;
         this.taskSteps = [];
         
+        log.info(`Subagent ${this.agentId} starting task: ${task.substring(0, 50)}...`);
+        const startTime = Date.now();
+        
         try {
           // 评估任务复杂度
           const complexity = evaluateTaskComplexity(task);
@@ -153,7 +160,7 @@ export class SubAgentPool {
             thinking: thinkingMode
           };
           
-          log.debug(`Running task with complexity ${complexity}, thinking mode ${thinkingMode}`);
+          log.debug(`Subagent ${this.agentId} running task with complexity ${complexity}, thinking mode ${thinkingMode}`);
           
           // 添加任务步骤
           const planningStep = this.addTaskStep('任务规划');
@@ -183,12 +190,16 @@ export class SubAgentPool {
             this.setContext('sessionId', (ctx as any).sessionId);
           }
           
+          const endTime = Date.now();
+          log.info(`Subagent ${this.agentId} completed task in ${endTime - startTime}ms`);
           return result;
         } catch (error) {
           // 标记任务步骤失败
           if (this.currentStep) {
             this.updateTaskStep(this.currentStep, 'failed', error instanceof Error ? error.message : String(error));
           }
+          const endTime = Date.now();
+          log.error(`Subagent ${this.agentId} failed task in ${endTime - startTime}ms: ${String(error)}`);
           throw error;
         } finally {
           this.isBusy = false;
