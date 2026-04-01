@@ -179,8 +179,8 @@ export class SubAgentPool {
           this.setContext('previousTasks', previousTasks);
           
           // 记录会话ID
-          if (ctx.sessionId) {
-            this.setContext('sessionId', ctx.sessionId);
+          if ((ctx as any).sessionId) {
+            this.setContext('sessionId', (ctx as any).sessionId);
           }
           
           return result;
@@ -381,9 +381,9 @@ export class SubAgentPool {
   private findRelatedAgent(task: string, ctx: SpawnSubagentContext): SubAgentInstance | undefined {
     // 查找与任务相关的Agent
     // 1. 首先查找具有相同会话ID的Agent
-    if (ctx.sessionId) {
+    if ((ctx as any).sessionId) {
       for (const agent of this.pool.values()) {
-        if (!agent.isBusy && agent.getContext('sessionId') === ctx.sessionId) {
+        if (!agent.isBusy && agent.getContext('sessionId') === (ctx as any).sessionId) {
           return agent;
         }
       }
@@ -465,10 +465,7 @@ export class SubAgentPool {
   }
 
   // 单例实例
-  private static _instance: SubAgentPool | null = null;
-  public static get instance(): SubAgentPool | null {
-    return SubAgentPool._instance;
-  }
+  public static instance: SubAgentPool | null = null;
 }
 
 // 全局子Agent池实例
@@ -477,7 +474,7 @@ let globalSubAgentPool: SubAgentPool | null = null;
 export function getSubAgentPool(): SubAgentPool {
   if (!globalSubAgentPool) {
     globalSubAgentPool = new SubAgentPool();
-    SubAgentPool._instance = globalSubAgentPool;
+    SubAgentPool.instance = globalSubAgentPool;
   }
   return globalSubAgentPool;
 }
@@ -485,7 +482,7 @@ export function getSubAgentPool(): SubAgentPool {
 export function shutdownSubAgentPool() {
   if (globalSubAgentPool) {
     globalSubAgentPool.shutdown();
-    SubAgentPool._instance = null;
+    SubAgentPool.instance = null;
     globalSubAgentPool = null;
   }
 }

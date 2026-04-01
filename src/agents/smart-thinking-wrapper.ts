@@ -1,4 +1,6 @@
-import { runEmbeddedPiAgent, type RunEmbeddedPiAgentParams, type EmbeddedPiRunResult } from "./pi-embedded-runner/run.js";
+import { runEmbeddedPiAgent } from "./pi-embedded-runner/run.js";
+import type { RunEmbeddedPiAgentParams } from "./pi-embedded-runner/run/params.js";
+import type { EmbeddedPiRunResult } from "./pi-embedded-runner/types.js";
 import { generateQuickReply, evaluateTaskComplexity } from "./smart-thinking.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getSubAgentPool } from "./subagent-pool.js";
@@ -53,8 +55,9 @@ export async function runEmbeddedPiAgentWithSmartThinking(
   // 5. 组织详细的任务完成回复
   if (result) {
     // 检查是否有任务执行状态信息
-    if (result.meta?.taskSteps) {
-      const taskSteps = result.meta.taskSteps;
+    // 注意：taskSteps是我们在子Agent中添加的自定义字段
+    const taskSteps = (result as any).meta?.taskSteps;
+    if (taskSteps) {
       const failedSteps = taskSteps.filter((step: any) => step.status === 'failed');
       
       if (failedSteps.length > 0) {
@@ -63,10 +66,10 @@ export async function runEmbeddedPiAgentWithSmartThinking(
         const errorSummary = errorMessages.join('\n');
         
         // 增强回复内容，包含失败信息
-        if (result.output) {
-          result.output = `${result.output}\n\n任务执行过程中遇到一些问题：\n${errorSummary}`;
-        } else if (result.content) {
-          result.content = `${result.content}\n\n任务执行过程中遇到一些问题：\n${errorSummary}`;
+        if ((result as any).output) {
+          (result as any).output = `${(result as any).output}\n\n任务执行过程中遇到一些问题：\n${errorSummary}`;
+        } else if ((result as any).content) {
+          (result as any).content = `${(result as any).content}\n\n任务执行过程中遇到一些问题：\n${errorSummary}`;
         }
       }
     }

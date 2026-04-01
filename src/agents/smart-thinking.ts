@@ -56,8 +56,9 @@ export async function callLLM(model: any, prompt: string, options: any): Promise
     const stream = await streamSimple(model, {
       messages: [
         {
-          role: "user",
-          content: prompt
+          role: "user" as const,
+          content: prompt,
+          timestamp: Date.now()
         }
       ]
     }, options);
@@ -106,7 +107,7 @@ export async function generateQuickReply(message: string, config: any, activeAge
     // 提取回复内容
     let reply = '';
     if (Array.isArray(response.content)) {
-      reply = response.content.map(block => 
+      reply = response.content.map((block: any) => 
         block.type === 'text' ? block.text : ''
       ).join('').trim();
     } else if (typeof response.content === 'string') {
@@ -158,7 +159,6 @@ export async function processTaskIntelligently(message: any, params: any, ctx: a
           thinking: complexity === 'complex' ? 'medium' : 'off'
         },
         {
-          config: params.config,
           sessionKey: params.sessionKey,
           sessionId: params.sessionId,
           runId: params.runId
