@@ -294,6 +294,10 @@ export type AgentDefaultsConfig = {
     runTimeoutSeconds?: number;
     /** Gateway timeout in ms for sub-agent announce delivery calls (default: 90000). */
     announceTimeoutMs?: number;
+    /** Number of sub-agent instances to pre-initialize in the pool (default: 5). */
+    prefillSize?: number;
+    /** Enable pool-based sub-agent execution (default: false for backward compatibility). */
+    usePool?: boolean;
   };
   /** Optional sandbox settings for non-main sessions. */
   sandbox?: AgentSandboxConfig;

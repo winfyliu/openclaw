@@ -1277,10 +1277,28 @@ export function buildSubagentSystemPrompt(params: {
     "8. **Recover from compacted/truncated tool output** - If you see `[compacted: tool output removed to free context]` or `[truncated: output exceeded context limit]`, assume prior output was reduced. Re-read only what you need using smaller chunks (`read` with offset/limit, or targeted `rg`/`head`/`tail`) instead of full-file `cat`.",
     "",
     "## Output Format",
-    "When complete, your final response should include:",
-    `- What you accomplished or found`,
-    `- Any relevant details the ${parentLabel} should know`,
-    "- Keep it concise but informative",
+    "Your final response must clearly separate **process** from **result**:",
+    "",
+    "### Process (Optional)",
+    "- Document your approach, reasoning, and intermediate steps",
+    "- Include technical details, file paths, commands executed",
+    `- This section is for the ${parentLabel}'s context, NOT for the user`,
+    "",
+    "### Result (Required)",
+    "- A clear, concise summary of what was accomplished or found",
+    "- This is the ONLY part that should be delivered to the user",
+    "- Write it as if speaking directly to the user",
+    "",
+    "Use this format:",
+    "```",
+    "**Process:**",
+    "(Your internal reasoning and steps - optional)",
+    "",
+    "**Result:**",
+    "(The final answer for the user - required)",
+    "```",
+    "",
+    "If the task is simple, you can skip the Process section and just provide the Result.",
     "",
     "## What You DON'T Do",
     `- NO user conversations (that's ${parentLabel}'s job)`,
@@ -1360,11 +1378,11 @@ function buildAnnounceReplyInstruction(params: {
   }
   if (params.expectsCompletionMessage) {
     if (params.includePlanForUser) {
-      return `A completed ${params.announceType} is ready for user delivery. First provide a brief execution plan summary (1-3 bullets) only if helpful, then provide the final result in your normal assistant voice. Keep internal context private (don't mention system/log/stats/session details or announce type).`;
+      return `A completed ${params.announceType} is ready for user delivery. Extract ONLY the "**Result:**" section from the child output and deliver that to the user in your normal assistant voice. If there is no explicit Result section, summarize the key findings concisely. Do NOT send the "**Process:**" section or any internal reasoning/steps to the user - that is for your context only. Keep internal context private (don't mention system/log/stats/session details or announce type).`;
     }
-    return `A completed ${params.announceType} is ready for user delivery. Convert the result above into your normal assistant voice and send that user-facing update now. Keep this internal context private (don't mention system/log/stats/session details or announce type).`;
+    return `A completed ${params.announceType} is ready for user delivery. Extract ONLY the "**Result:**" section from the child output and deliver that to the user in your normal assistant voice. If there is no explicit Result section, summarize the key findings concisely. Do NOT send the "**Process:**" section or any internal reasoning/steps to the user - that is for your context only. Keep internal context private (don't mention system/log/stats/session details or announce type).`;
   }
-  return `A completed ${params.announceType} is ready for user delivery. Convert the result above into your normal assistant voice and send that user-facing update now. Keep this internal context private (don't mention system/log/stats/session details or announce type), and do not copy the internal event text verbatim. Reply ONLY: ${SILENT_REPLY_TOKEN} if this exact result was already delivered to the user in this same turn.`;
+  return `A completed ${params.announceType} is ready for user delivery. Extract ONLY the "**Result:**" section from the child output and deliver that to the user in your normal assistant voice. If there is no explicit Result section, summarize the key findings concisely. Do NOT send the "**Process:**" section or any internal reasoning/steps to the user - that is for your context only. Keep internal context private (don't mention system/log/stats/session details or announce type), and do not copy the internal event text verbatim. Reply ONLY: ${SILENT_REPLY_TOKEN} if this exact result was already delivered to the user in this same turn.`;
 }
 
 function buildAnnounceSteerMessage(events: AgentInternalEvent[]): string {

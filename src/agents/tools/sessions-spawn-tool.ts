@@ -4,6 +4,8 @@ import { ACP_SPAWN_MODES, ACP_SPAWN_STREAM_TARGETS, spawnAcpDirect } from "../ac
 import { optionalStringEnum } from "../schema/typebox.js";
 import type { SpawnedToolContext } from "../spawned-context.js";
 import { SUBAGENT_SPAWN_MODES, spawnSubagentDirect } from "../subagent-spawn.js";
+import { getSubAgentPool } from "../subagent-pool.js";
+import { loadConfig } from "../../config/config.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam, ToolInputError } from "./common.js";
 
@@ -35,16 +37,14 @@ const SessionsSpawnToolSchema = Type.Object({
   thinking: Type.Optional(Type.String()),
   cwd: Type.Optional(Type.String()),
   runTimeoutSeconds: Type.Optional(Type.Number({ minimum: 0 })),
-  // Back-compat: older callers used timeoutSeconds for this tool.
   timeoutSeconds: Type.Optional(Type.Number({ minimum: 0 })),
   thread: Type.Optional(Type.Boolean()),
   mode: optionalStringEnum(SUBAGENT_SPAWN_MODES),
   cleanup: optionalStringEnum(["delete", "keep"] as const),
   sandbox: optionalStringEnum(SESSIONS_SPAWN_SANDBOX_MODES),
   streamTo: optionalStringEnum(ACP_SPAWN_STREAM_TARGETS),
+  usePool: Type.Optional(Type.Boolean({ description: "Use subagent pool for execution (default: from config)" })),
 
-  // Inline attachments (snapshot-by-value).
-  // NOTE: Attachment contents are redacted from transcript persistence by sanitizeToolCallInputs.
   attachments: Type.Optional(
     Type.Array(
       Type.Object({
@@ -58,8 +58,6 @@ const SessionsSpawnToolSchema = Type.Object({
   ),
   attachAs: Type.Optional(
     Type.Object({
-      // Where the spawned agent should look for attachments.
-      // Kept as a hint; implementation materializes into the child workspace.
       mountPath: Type.Optional(Type.String()),
     }),
   ),
@@ -101,12 +99,13 @@ export function createSessionsSpawnTool(
       const modelOverride = readStringParam(params, "model");
       const thinkingOverrideRaw = readStringParam(params, "thinking");
       const cwd = readStringParam(params, "cwd");
-      const mode = params.mode === "run" || params.mode === "session" ? params.mode : undefined;
-      const cleanup =
+      const mode: "run" | "session" | undefined =
+        params.mode === "run" || params.mode === "session" ? params.mode : undefined;
+      const cleanup: "keep" | "delete" =
         params.cleanup === "keep" || params.cleanup === "delete" ? params.cleanup : "keep";
-      const sandbox = params.sandbox === "require" ? "require" : "inherit";
+      const sandbox: "inherit" | "require" =
+        params.sandbox === "require" ? "require" : "inherit";
       const streamTo = params.streamTo === "parent" ? "parent" : undefined;
-      // Back-compat: older callers used timeoutSeconds for this tool.
       const timeoutSecondsCandidate =
         typeof params.runTimeoutSeconds === "number"
           ? params.runTimeoutSeconds
@@ -118,6 +117,7 @@ export function createSessionsSpawnTool(
           ? Math.max(0, Math.floor(timeoutSecondsCandidate))
           : undefined;
       const thread = params.thread === true;
+      const usePoolParam = params.usePool === true;
       const attachments = Array.isArray(params.attachments)
         ? (params.attachments as Array<{
             name: string;
@@ -173,41 +173,53 @@ export function createSessionsSpawnTool(
         return jsonResult(result);
       }
 
-      const result = await spawnSubagentDirect(
-        {
-          task,
-          label: label || undefined,
-          agentId: requestedAgentId,
-          model: modelOverride,
-          thinking: thinkingOverrideRaw,
-          runTimeoutSeconds,
-          thread,
-          mode,
-          cleanup,
-          sandbox,
-          expectsCompletionMessage: true,
-          attachments,
-          attachMountPath:
-            params.attachAs && typeof params.attachAs === "object"
-              ? readStringParam(params.attachAs as Record<string, unknown>, "mountPath")
-              : undefined,
-        },
-        {
-          agentSessionKey: opts?.agentSessionKey,
-          agentChannel: opts?.agentChannel,
-          agentAccountId: opts?.agentAccountId,
-          agentTo: opts?.agentTo,
-          agentThreadId: opts?.agentThreadId,
-          agentGroupId: opts?.agentGroupId,
-          agentGroupChannel: opts?.agentGroupChannel,
-          agentGroupSpace: opts?.agentGroupSpace,
-          requesterAgentIdOverride: opts?.requesterAgentIdOverride,
-          workspaceDir: opts?.workspaceDir,
-          taskId: opts?.taskId,
-          parentTaskNodeId: opts?.parentTaskNodeId,
-        },
-      );
+      const spawnParams = {
+        task,
+        label: label || undefined,
+        agentId: requestedAgentId,
+        model: modelOverride,
+        thinking: thinkingOverrideRaw,
+        runTimeoutSeconds,
+        thread,
+        mode,
+        cleanup,
+        sandbox,
+        expectsCompletionMessage: true,
+        attachments,
+        attachMountPath:
+          params.attachAs && typeof params.attachAs === "object"
+            ? readStringParam(params.attachAs as Record<string, unknown>, "mountPath")
+            : undefined,
+      };
 
+      const spawnCtx = {
+        agentSessionKey: opts?.agentSessionKey,
+        agentChannel: opts?.agentChannel,
+        agentAccountId: opts?.agentAccountId,
+        agentTo: opts?.agentTo,
+        agentThreadId: opts?.agentThreadId,
+        agentGroupId: opts?.agentGroupId,
+        agentGroupChannel: opts?.agentGroupChannel,
+        agentGroupSpace: opts?.agentGroupSpace,
+        requesterAgentIdOverride: opts?.requesterAgentIdOverride,
+        workspaceDir: opts?.workspaceDir,
+        taskId: opts?.taskId,
+        parentTaskNodeId: opts?.parentTaskNodeId,
+      };
+
+      const cfg = loadConfig();
+      const configUsePool = cfg?.agents?.defaults?.subagents?.usePool ?? false;
+      const shouldUsePool = usePoolParam || configUsePool;
+
+      if (shouldUsePool) {
+        const pool = getSubAgentPool({
+          prefillSize: cfg?.agents?.defaults?.subagents?.prefillSize,
+        });
+        const result = await pool.runTaskWithQueue(task, spawnParams, spawnCtx);
+        return jsonResult(result);
+      }
+
+      const result = await spawnSubagentDirect(spawnParams, spawnCtx);
       return jsonResult(result);
     },
   };

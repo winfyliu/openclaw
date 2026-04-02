@@ -389,7 +389,7 @@ export async function spawnSubagentDirect(
     };
   }
 
-  const maxChildren = cfg.agents?.defaults?.subagents?.maxChildrenPerAgent ?? 5;
+  const maxChildren = cfg.agents?.defaults?.subagents?.maxChildrenPerAgent ?? 20;
   const activeChildren = countActiveRunsForSession(requesterInternalKey);
   if (activeChildren >= maxChildren) {
     return {
@@ -398,7 +398,7 @@ export async function spawnSubagentDirect(
     };
   }
 
-  const maxActiveTasks = cfg.agents?.defaults?.subagents?.maxActiveTasksPerSession ?? 5;
+  const maxActiveTasks = cfg.agents?.defaults?.subagents?.maxActiveTasksPerSession ?? 20;
   const activeTasks = countActiveTasksForSession(requesterInternalKey);
   if (activeTasks >= maxActiveTasks) {
     return {

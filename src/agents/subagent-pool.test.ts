@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { SubAgentPool, getSubAgentPool, shutdownSubAgentPool } from './subagent-pool.js';
+import { SubAgentPool, getSubAgentPool, shutdownSubAgentPool, initializeSubAgentPool } from './subagent-pool.js';
 
 describe('SubAgentPool', () => {
   beforeEach(() => {
@@ -14,6 +14,39 @@ describe('SubAgentPool', () => {
     const pool = getSubAgentPool();
     expect(pool).toBeInstanceOf(SubAgentPool);
     expect(pool.getPoolSize()).toBe(0);
+  });
+
+  it('should create a subagent pool with custom settings', () => {
+    const pool = getSubAgentPool({ maxPoolSize: 10, idleTimeout: 60000, prefillSize: 3 });
+    expect(pool).toBeInstanceOf(SubAgentPool);
+    expect(pool.getPoolSize()).toBe(0);
+  });
+
+  it('should prefill agents on initialization', async () => {
+    const pool = getSubAgentPool({ prefillSize: 3 });
+    expect(pool.isInitialized()).toBe(false);
+    await pool.initialize();
+    expect(pool.isInitialized()).toBe(true);
+    expect(pool.getPoolSize()).toBe(3);
+  });
+
+  it('should not prefill agents when prefillSize is 0', async () => {
+    const pool = getSubAgentPool({ prefillSize: 0 });
+    await pool.initialize();
+    expect(pool.getPoolSize()).toBe(0);
+  });
+
+  it('should initialize pool using initializeSubAgentPool helper', async () => {
+    const pool = await initializeSubAgentPool({ prefillSize: 2 });
+    expect(pool.isInitialized()).toBe(true);
+    expect(pool.getPoolSize()).toBe(2);
+  });
+
+  it('should only initialize once', async () => {
+    const pool = getSubAgentPool({ prefillSize: 2 });
+    await pool.initialize();
+    await pool.initialize();
+    expect(pool.getPoolSize()).toBe(2);
   });
 
   it('should create new agents when pool is empty', async () => {
@@ -69,5 +102,6 @@ describe('SubAgentPool', () => {
     const pool = getSubAgentPool();
     pool.shutdown();
     expect(pool.getPoolSize()).toBe(0);
+    expect(pool.isInitialized()).toBe(false);
   });
 });

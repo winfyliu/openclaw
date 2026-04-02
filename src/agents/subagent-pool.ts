@@ -47,21 +47,62 @@ export interface QueuedTask {
   priority: 'low' | 'medium' | 'high';
 }
 
+export interface SubAgentPoolOptions {
+  maxPoolSize?: number;
+  idleTimeout?: number;
+  prefillSize?: number;
+}
+
 export class SubAgentPool {
   private pool: Map<string, SubAgentInstance> = new Map();
   private taskQueue: QueuedTask[] = [];
   private maxPoolSize: number;
   private idleTimeout: number;
+  private prefillSize: number;
   private cleanupInterval: NodeJS.Timeout;
+  private initialized: boolean = false;
+  private initPromise: Promise<void> | null = null;
 
-  constructor(maxPoolSize: number = 5, idleTimeout: number = 300000) {
-    this.maxPoolSize = maxPoolSize;
-    this.idleTimeout = idleTimeout;
+  constructor(options: SubAgentPoolOptions = {}) {
+    this.maxPoolSize = options.maxPoolSize ?? 20;
+    this.idleTimeout = options.idleTimeout ?? 300000;
+    this.prefillSize = Math.min(options.prefillSize ?? 5, this.maxPoolSize);
     this.cleanupInterval = setInterval(() => {
       this.cleanupIdleAgents();
       this.processTaskQueue();
       this.monitorTaskStatus();
-    }, 10000); // 每10秒清理一次并处理队列
+    }, 10000);
+  }
+
+  async initialize(): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+    this.initPromise = this.prefillAgents();
+    await this.initPromise;
+    this.initialized = true;
+  }
+
+  private async prefillAgents(): Promise<void> {
+    if (this.prefillSize <= 0) {
+      return;
+    }
+    log.info(`Pre-initializing ${this.prefillSize} subagents...`);
+    const startTime = Date.now();
+    const promises: Promise<SubAgentInstance>[] = [];
+    for (let i = 0; i < this.prefillSize; i++) {
+      promises.push(this.createNewAgent());
+    }
+    await Promise.all(promises);
+    const elapsed = Date.now() - startTime;
+    log.info(`Pre-initialized ${this.prefillSize} subagents in ${elapsed}ms`);
+  }
+
+  isInitialized(): boolean {
+    return this.initialized;
   }
 
   async getSubAgent(contextId?: string): Promise<SubAgentInstance> {
@@ -72,16 +113,58 @@ export class SubAgentPool {
       return agent;
     }
 
-    if (this.pool.size >= this.maxPoolSize) {
-      log.debug(`Subagent pool at capacity (${this.pool.size}/${this.maxPoolSize}), cleaning up idle agents`);
-      this.cleanupIdleAgents();
-      if (this.pool.size >= this.maxPoolSize) {
-        log.debug(`Pool still at capacity, creating new agent anyway`);
-        return this.createNewAgent();
-      }
+    // 首先尝试查找空闲的Agent
+    const idleAgent = Array.from(this.pool.values()).find(agent => !agent.isBusy);
+    if (idleAgent) {
+      log.debug(`Reusing idle subagent ${idleAgent.agentId}`);
+      return idleAgent;
     }
 
-    log.debug(`Creating new subagent, current pool size: ${this.pool.size}`);
+    // 如果池未满，创建新Agent
+    if (this.pool.size < this.maxPoolSize) {
+      log.debug(`Creating new subagent, current pool size: ${this.pool.size}`);
+      return this.createNewAgent();
+    }
+
+    // 池已满，清理空闲Agent
+    log.debug(`Subagent pool at capacity (${this.pool.size}/${this.maxPoolSize}), cleaning up idle agents`);
+    this.cleanupIdleAgents();
+    
+    // 再次尝试查找空闲的Agent
+    const idleAgentAfterCleanup = Array.from(this.pool.values()).find(agent => !agent.isBusy);
+    if (idleAgentAfterCleanup) {
+      log.debug(`Reusing idle subagent ${idleAgentAfterCleanup.agentId} after cleanup`);
+      return idleAgentAfterCleanup;
+    }
+
+    // 如果池仍然满，等待可用的Agent（最多等待30秒）
+    log.debug(`Pool still at capacity, waiting for available agent...`);
+    return this.waitForAvailableAgent(30000);
+  }
+
+  private async waitForAvailableAgent(timeoutMs: number): Promise<SubAgentInstance> {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeoutMs) {
+      // 查找空闲的Agent
+      const idleAgent = Array.from(this.pool.values()).find(agent => !agent.isBusy);
+      if (idleAgent) {
+        log.debug(`Found available agent ${idleAgent.agentId} after waiting`);
+        return idleAgent;
+      }
+      
+      // 如果池未满，创建新Agent
+      if (this.pool.size < this.maxPoolSize) {
+        log.debug(`Creating new agent after waiting`);
+        return this.createNewAgent();
+      }
+      
+      // 等待100ms后重试
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    // 超时，强制创建新Agent
+    log.warn(`Timeout waiting for available agent, forcing creation of new agent`);
     return this.createNewAgent();
   }
 
@@ -467,27 +550,32 @@ export class SubAgentPool {
       agent.shutdown();
     }
     this.pool.clear();
-    // 拒绝所有排队的任务
     this.taskQueue.forEach(task => {
       task.reject(new Error('Subagent pool shutdown'));
     });
     this.taskQueue = [];
+    this.initialized = false;
+    this.initPromise = null;
     log.debug("Subagent pool shutdown");
   }
 
-  // 单例实例
   public static instance: SubAgentPool | null = null;
 }
 
-// 全局子Agent池实例
 let globalSubAgentPool: SubAgentPool | null = null;
 
-export function getSubAgentPool(): SubAgentPool {
+export function getSubAgentPool(options?: SubAgentPoolOptions): SubAgentPool {
   if (!globalSubAgentPool) {
-    globalSubAgentPool = new SubAgentPool();
+    globalSubAgentPool = new SubAgentPool(options);
     SubAgentPool.instance = globalSubAgentPool;
   }
   return globalSubAgentPool;
+}
+
+export async function initializeSubAgentPool(options?: SubAgentPoolOptions): Promise<SubAgentPool> {
+  const pool = getSubAgentPool(options);
+  await pool.initialize();
+  return pool;
 }
 
 export function shutdownSubAgentPool() {
